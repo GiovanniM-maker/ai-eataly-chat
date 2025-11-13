@@ -100,6 +100,7 @@ export const useChatStore = create((set, get) => ({
         });
       }
 
+      console.log('📥 Loaded chats from Firebase:', chatsData.length);
       set({ chats: chatsData, loading: false });
 
       // Set first chat as active if no active chat is set
@@ -125,6 +126,7 @@ export const useChatStore = create((set, get) => ({
             messages: doc.data().messages || []
           }));
 
+          console.log('🔄 Real-time update from Firebase:', chatsData.length, 'chats');
           set({ chats: chatsData });
         },
         (error) => {
@@ -176,16 +178,17 @@ export const useChatStore = create((set, get) => ({
       };
 
       const docRef = await addDoc(collection(db, 'chats'), newChatData);
+      console.log('✅ New chat created in Firebase:', docRef.id);
       set({ activeChatId: docRef.id });
       return docRef.id;
     } catch (error) {
-      console.error('Error creating chat:', error);
+      console.error('❌ Error creating chat:', error);
       return null;
     }
   },
 
   sendMessage: async (content, images = []) => {
-    let { activeChatId, currentModel } = get();
+    let { activeChatId, currentModel, chats } = get();
     
     // Create a new chat if none exists
     if (!activeChatId) {
@@ -196,13 +199,14 @@ export const useChatStore = create((set, get) => ({
       }
       activeChatId = newChatId;
       set({ activeChatId: newChatId });
+      // Wait a bit for the chat to be created and appear in the listener
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
     try {
       const chatRef = doc(db, 'chats', activeChatId);
       
-      // Get current chat data from Firestore to ensure we have the latest
-      const { chats } = get();
+      // Get current chat data - try from local state first, then Firestore
       let currentChat = chats.find(chat => chat.id === activeChatId);
       
       // If chat not found in local state, fetch it from Firestore
@@ -217,11 +221,11 @@ export const useChatStore = create((set, get) => ({
               title: docData.title || 'New Chat'
             };
           } else {
-            currentChat = { messages: [], title: 'New Chat' };
+            currentChat = { id: activeChatId, messages: [], title: 'New Chat' };
           }
         } catch (fetchError) {
           console.warn('Could not fetch chat from Firestore, using empty:', fetchError);
-          currentChat = { messages: [], title: 'New Chat' };
+          currentChat = { id: activeChatId, messages: [], title: 'New Chat' };
         }
       }
 
@@ -236,6 +240,7 @@ export const useChatStore = create((set, get) => ({
             await uploadBytes(imageRef, image);
             const downloadURL = await getDownloadURL(imageRef);
             imageUrls.push(downloadURL);
+            console.log('Image uploaded:', downloadURL);
           } catch (uploadError) {
             console.error('Error uploading image:', uploadError);
             throw new Error(`Failed to upload image: ${uploadError.message}`);
@@ -262,14 +267,14 @@ export const useChatStore = create((set, get) => ({
         ? (content?.slice(0, 50) || 'New Chat')
         : (currentChat.title || 'New Chat');
 
-      // Update chat with user message immediately
+      // Update chat with user message immediately in Firestore
       await updateDoc(chatRef, {
         messages: newMessages,
         title: newTitle,
         updatedAt: serverTimestamp()
       });
 
-      console.log('User message saved to Firebase');
+      console.log('✅ User message saved to Firebase:', { activeChatId, messageCount: newMessages.length });
 
       // Get assistant response
       const assistantResponse = await fakeApiCall(content || (imageUrls.length > 0 ? 'Image received' : ''), currentModel);
@@ -289,9 +294,9 @@ export const useChatStore = create((set, get) => ({
         updatedAt: serverTimestamp()
       });
 
-      console.log('Assistant message saved to Firebase');
+      console.log('✅ Assistant message saved to Firebase:', { activeChatId, totalMessages: finalMessages.length });
     } catch (error) {
-      console.error('Error sending message:', error);
+      console.error('❌ Error sending message:', error);
       throw error; // Re-throw so UI can handle it
     }
   },
