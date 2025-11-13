@@ -7,9 +7,5 @@ export default defineConfig({
   // Use '/' for Vercel (default), GitHub Pages will override via environment variable
   // Set VITE_BASE_PATH=/ai-eataly-chat/ for GitHub Pages builds
   base: process.env.VITE_BASE_PATH || '/',
-  build: {
-    outDir: 'dist',
-    assetsDir: 'assets',
-  },
 })
 
