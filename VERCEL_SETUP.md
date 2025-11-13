@@ -6,11 +6,12 @@
 
 Vai su **Vercel Dashboard → Settings → Environment Variables**
 
-### **GOOGLE_SERVICE_ACCOUNT** (OBBLIGATORIO)
+### **GOOGLE_SERVICE_ACCOUNT_JSON** (OBBLIGATORIO)
 
 - **Tipo**: String (JSON completo del Service Account)
 - **Dove**: Vercel Environment Variables → **Production, Preview, Development**
 - **Formato**: Stringa JSON completa (usa le virgolette doppie)
+- **⚠️ IMPORTANTE**: Il nome della variabile è `GOOGLE_SERVICE_ACCOUNT_JSON` (non `GOOGLE_SERVICE_ACCOUNT`)
 
 **⚠️ IMPORTANTE**: Inserisci l'intero JSON come stringa, mantenendo i caratteri `\n` per i newline nella private_key.
 
@@ -47,7 +48,7 @@ VITE_FIREBASE_MEASUREMENT_ID=G-GSE68WH3P9
 ### 2. Aggiungi Variabili d'Ambiente
 - Vai su **Settings** → **Environment Variables**
 - Clicca **Add New**
-- Nome: `GOOGLE_SERVICE_ACCOUNT`
+- Nome: `GOOGLE_SERVICE_ACCOUNT_JSON`
 - Valore: Incolla l'intero JSON del Service Account (come stringa)
 - Seleziona: **Production**, **Preview**, **Development**
 - Clicca **Save**
@@ -83,8 +84,8 @@ curl -X POST https://your-app.vercel.app/api/generate \
 
 ## 🐛 Troubleshooting
 
-### Errore: "Missing GOOGLE_SERVICE_ACCOUNT"
-- Verifica che la variabile sia impostata su Vercel
+### Errore: "Missing GOOGLE_SERVICE_ACCOUNT_JSON"
+- Verifica che la variabile sia impostata su Vercel con il nome corretto: `GOOGLE_SERVICE_ACCOUNT_JSON`
 - Assicurati di aver selezionato tutti gli ambienti (Production, Preview, Development)
 - Fai un redeploy dopo aver aggiunto la variabile
 
