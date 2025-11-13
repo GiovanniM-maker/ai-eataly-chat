@@ -34,7 +34,18 @@ const ChatWindow = () => {
 
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-6 py-6">
-        {activeChat?.messages.length === 0 ? (
+        {!activeChatId ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <h2 className="text-2xl font-semibold text-gray-300 mb-2">
+                No chat selected
+              </h2>
+              <p className="text-gray-500">
+                Create a new chat to get started
+              </p>
+            </div>
+          </div>
+        ) : activeChat && activeChat.messages.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
               <h2 className="text-2xl font-semibold text-gray-300 mb-2">
@@ -45,14 +56,14 @@ const ChatWindow = () => {
               </p>
             </div>
           </div>
-        ) : (
+        ) : activeChat ? (
           <div className="max-w-4xl mx-auto">
-            {activeChat?.messages.map((message, index) => (
+            {activeChat.messages.map((message, index) => (
               <MessageBubble key={index} message={message} />
             ))}
             <div ref={messagesEndRef} />
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Input Area */}
