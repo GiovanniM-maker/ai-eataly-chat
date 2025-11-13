@@ -18,37 +18,101 @@ import {
   getDownloadURL
 } from 'firebase/storage';
 import { db, storage } from '../config/firebase';
+import { MODELS, DEFAULT_MODEL } from '../constants/models';
 
-// Available models
-export const MODELS = [
-  'gpt-4',
-  'gpt-4o',
-  'gpt-5',
-  'llama-3-70b',
-  'mistral-large'
-];
+// Convert image URL to base64
+const imageUrlToBase64 = async (imageUrl) => {
+  try {
+    const response = await fetch(imageUrl);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (error) {
+    console.error('Error converting image to base64:', error);
+    return null;
+  }
+};
 
-// Fake API function that simulates an assistant response
-export const fakeApiCall = async (message, model) => {
-  // Simulate network delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  // Return a mock response based on the model
-  const responses = {
-    'gpt-4': `This is a response from GPT-4. You said: "${message}"`,
-    'gpt-4o': `This is a response from GPT-4o. You said: "${message}"`,
-    'gpt-5': `This is a response from GPT-5. You said: "${message}"`,
-    'llama-3-70b': `This is a response from Llama 3 70B. You said: "${message}"`,
-    'mistral-large': `This is a response from Mistral Large. You said: "${message}"`
-  };
-  
-  return responses[model] || responses['gpt-4'];
+// Call Google Gemini API via serverless function
+const callGeminiAPI = async (message, model, images = [], conversationHistory = []) => {
+  try {
+    // Prepara contents con storia conversazione
+    const contents = [];
+    
+    // Aggiungi storia conversazione (ultimi 10 messaggi per evitare token limit)
+    const recentHistory = conversationHistory.slice(-10);
+    recentHistory.forEach(msg => {
+      contents.push({
+        role: msg.role === 'user' ? 'user' : 'model',
+        parts: [{ text: msg.content }]
+      });
+    });
+
+    // Aggiungi nuovo messaggio utente
+    const userParts = [{ text: message }];
+    
+    // Aggiungi immagini se presenti
+    if (images && images.length > 0) {
+      for (const imageUrl of images) {
+        const base64Image = await imageUrlToBase64(imageUrl);
+        if (base64Image) {
+          // Estrai MIME type e data
+          const mimeMatch = base64Image.match(/data:([^;]+);base64,(.+)/);
+          if (mimeMatch) {
+            userParts.push({
+              inline_data: {
+                mime_type: mimeMatch[1],
+                data: mimeMatch[2]
+              }
+            });
+          }
+        }
+      }
+    }
+
+    contents.push({
+      role: 'user',
+      parts: userParts
+    });
+
+    // Determina API endpoint (usa /api/generate per Vercel, altrimenti endpoint assoluto)
+    const apiUrl = import.meta.env.VITE_API_URL || '/api/generate';
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: model || DEFAULT_MODEL,
+        contents: contents,
+        temperature: 0.7,
+        top_p: 0.9,
+        maxOutputTokens: 2048,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+      throw new Error(errorData.error || `API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.reply || 'No response generated';
+  } catch (error) {
+    console.error('Error calling Gemini API:', error);
+    throw error;
+  }
 };
 
 // Zustand store for chat state management with Firebase integration
 export const useChatStore = create((set, get) => ({
   // State
-  currentModel: 'gpt-4',
+  currentModel: DEFAULT_MODEL,
   chats: [],
   activeChatId: null,
   sidebarCollapsed: false,
@@ -298,8 +362,13 @@ export const useChatStore = create((set, get) => ({
 
       console.log('✅ User message saved to Firebase:', { activeChatId, messageCount: newMessages.length });
 
-      // Get assistant response
-      const assistantResponse = await fakeApiCall(content || (imageUrls.length > 0 ? 'Image received' : ''), currentModel);
+      // Get assistant response from Google Gemini
+      const assistantResponse = await callGeminiAPI(
+        content || (imageUrls.length > 0 ? 'Describe this image' : ''),
+        currentModel,
+        imageUrls,
+        currentMessages // Pass conversation history
+      );
       
       // Add assistant message
       const assistantMessage = {
