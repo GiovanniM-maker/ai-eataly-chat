@@ -4,9 +4,11 @@ import {
   doc,
   addDoc,
   updateDoc,
+  getDocs,
   onSnapshot,
   query,
   orderBy,
+  limit,
   serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
@@ -48,39 +50,111 @@ export const useChatStore = create((set, get) => ({
   unsubscribe: null,
 
   // Initialize Firebase listener
-  initializeChats: () => {
+  initializeChats: async () => {
     const { unsubscribe: existingUnsubscribe } = get();
     if (existingUnsubscribe) {
       existingUnsubscribe(); // Clean up existing listener
     }
 
     const chatsRef = collection(db, 'chats');
-    const q = query(chatsRef, orderBy('createdAt', 'desc'));
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const chatsData = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-          messages: doc.data().messages || []
-        }));
-
-        set({ chats: chatsData, loading: false });
-
-        // Set first chat as active if no active chat is set
-        const { activeChatId } = get();
-        if (!activeChatId && chatsData.length > 0) {
-          set({ activeChatId: chatsData[0].id });
+    
+    // First, load initial data quickly with getDocs
+    try {
+      let snapshot;
+      let useOrderBy = true;
+      
+      // Try with orderBy first
+      try {
+        const q = query(chatsRef, orderBy('createdAt', 'desc'), limit(50));
+        snapshot = await getDocs(q);
+      } catch (orderByError) {
+        // If orderBy fails (missing index), try without it
+        if (orderByError.code === 'failed-precondition' || orderByError.message?.includes('index')) {
+          console.warn('OrderBy query requires index, loading without order:', orderByError);
+          useOrderBy = false;
+          const q = query(chatsRef, limit(50));
+          snapshot = await getDocs(q);
+        } else {
+          throw orderByError;
         }
-      },
-      (error) => {
-        console.error('Error loading chats:', error);
-        set({ loading: false });
       }
-    );
+      
+      const chatsData = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        messages: doc.data().messages || []
+      }));
 
-    set({ unsubscribe });
+      // Sort manually if we couldn't use orderBy
+      if (!useOrderBy) {
+        chatsData.sort((a, b) => {
+          const aTime = a.createdAt?.toMillis?.() || a.createdAt?.seconds || 0;
+          const bTime = b.createdAt?.toMillis?.() || b.createdAt?.seconds || 0;
+          return bTime - aTime;
+        });
+      }
+
+      set({ chats: chatsData, loading: false });
+
+      // Set first chat as active if no active chat is set
+      const { activeChatId } = get();
+      if (!activeChatId && chatsData.length > 0) {
+        set({ activeChatId: chatsData[0].id });
+      }
+    } catch (error) {
+      console.error('Error loading initial chats:', error);
+      set({ loading: false, chats: [] });
+      return;
+    }
+
+    // Then set up real-time listener for updates
+    try {
+      let q = query(chatsRef, orderBy('createdAt', 'desc'), limit(50));
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const chatsData = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+            messages: doc.data().messages || []
+          }));
+
+          set({ chats: chatsData });
+        },
+        (error) => {
+          console.error('Error in real-time listener:', error);
+          // Try without orderBy if it fails
+          if (error.code === 'failed-precondition') {
+            const fallbackQ = query(chatsRef, limit(50));
+            const fallbackUnsubscribe = onSnapshot(
+              fallbackQ,
+              (snapshot) => {
+                const chatsData = snapshot.docs.map((doc) => ({
+                  id: doc.id,
+                  ...doc.data(),
+                  messages: doc.data().messages || []
+                }));
+                // Sort manually
+                chatsData.sort((a, b) => {
+                  const aTime = a.createdAt?.toMillis?.() || a.createdAt?.seconds || 0;
+                  const bTime = b.createdAt?.toMillis?.() || b.createdAt?.seconds || 0;
+                  return bTime - aTime;
+                });
+                set({ chats: chatsData });
+              },
+              (fallbackError) => {
+                console.error('Error in fallback listener:', fallbackError);
+              }
+            );
+            set({ unsubscribe: fallbackUnsubscribe });
+          }
+        }
+      );
+
+      set({ unsubscribe });
+    } catch (error) {
+      console.error('Error setting up real-time listener:', error);
+    }
   },
 
   // Actions
