@@ -4,6 +4,7 @@
  */
 const MessageBubble = ({ message }) => {
   const isUser = message.role === 'user';
+  const hasImages = message.images && message.images.length > 0;
 
   return (
     <div
@@ -16,7 +17,28 @@ const MessageBubble = ({ message }) => {
             : 'bg-gray-700 text-gray-100'
         } transition-all duration-200`}
       >
-        <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        {/* Images */}
+        {hasImages && (
+          <div className={`mb-2 ${message.content ? 'mb-3' : ''}`}>
+            <div className="grid grid-cols-2 gap-2">
+              {message.images.map((imageUrl, index) => (
+                <div key={index} className="relative group">
+                  <img
+                    src={imageUrl}
+                    alt={`Image ${index + 1}`}
+                    className="w-full h-auto rounded-lg object-cover max-h-64 cursor-pointer"
+                    onClick={() => window.open(imageUrl, '_blank')}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        
+        {/* Text Content */}
+        {message.content && (
+          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        )}
       </div>
     </div>
   );
