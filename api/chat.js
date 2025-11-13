@@ -1,31 +1,34 @@
-import { createHash, createSign } from 'crypto';
+import { createSign } from 'crypto';
 
-// CORS allowed origins
+// CORS allowed origins - Update with your actual domains
 const ALLOWED_ORIGINS = [
-  'https://ai-app-vert-chi.vercel.app',
-  'https://ai-88rcx293y-giovannim-makers-projects.vercel.app',
-  'https://ai-6zj5iktzo-giovannim-makers-projects.vercel.app',
-  'https://ai-z0a43mww7-giovannim-makers-projects.vercel.app',
   'http://localhost:5173',
   'http://localhost:4173',
-  'https://giovannim-maker.github.io',
   'https://*.vercel.app',
 ];
 
-// Cache per access token
+// Cache for access token
 let cachedAccessToken = null;
 let cachedAccessTokenExpiry = 0;
 
-// Carica Service Account
+/**
+ * Load Service Account from environment variable
+ */
 const loadServiceAccount = () => {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT;
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (!raw) {
-    throw new Error('Missing GOOGLE_SERVICE_ACCOUNT environment variable');
+    throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_JSON environment variable');
   }
-  return JSON.parse(raw);
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw new Error('Invalid GOOGLE_SERVICE_ACCOUNT_JSON: must be valid JSON');
+  }
 };
 
-// Genera JWT per OAuth2
+/**
+ * Generate JWT for OAuth2 authentication
+ */
 const generateJWT = (serviceAccount) => {
   const nowInSeconds = Math.floor(Date.now() / 1000);
   
@@ -64,11 +67,13 @@ const generateJWT = (serviceAccount) => {
   return `${unsignedToken}.${signature}`;
 };
 
-// Ottieni access token
+/**
+ * Get OAuth2 access token (cached for 1 hour)
+ */
 const getAccessToken = async () => {
   const now = Date.now();
   
-  // Se abbiamo un token valido, usalo
+  // Return cached token if still valid (refresh 60 seconds before expiry)
   if (cachedAccessToken && now < cachedAccessTokenExpiry - 60000) {
     return cachedAccessToken;
   }
@@ -104,44 +109,40 @@ const getAccessToken = async () => {
   }
 };
 
-// Sanitizza immagine base64
-const sanitizeImage = (base64Data) => {
-  // Rimuovi prefisso data: URL se presente
-  let cleaned = base64Data.replace(/^data:image\/[a-z]+;base64,/, '');
-  // Rimuovi spazi bianchi
-  cleaned = cleaned.replace(/\s/g, '');
-  return cleaned;
+/**
+ * Convert frontend history format to Gemini API format
+ */
+const convertHistoryToGeminiFormat = (history = []) => {
+  return history.map(msg => ({
+    role: msg.role === 'user' ? 'user' : 'model',
+    parts: [{ text: msg.content }]
+  }));
 };
 
-// Determina MIME type da base64
-const getMimeType = (base64Data) => {
-  const header = base64Data.substring(0, 30);
-  if (header.startsWith('/9j/') || header.startsWith('iVBORw0KGgo')) {
-    return 'image/png';
-  }
-  if (header.startsWith('UklGR')) {
-    return 'image/webp';
-  }
-  return 'image/jpeg';
-};
-
-// Chiama Google Gemini API
-const callGeminiAPI = async (model, contents, generationConfig = {}, systemInstruction = null) => {
+/**
+ * Call Google Gemini API
+ */
+const callGeminiAPI = async (model, message, history = []) => {
   const accessToken = await getAccessToken();
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+  // Convert history to Gemini format
+  const contents = convertHistoryToGeminiFormat(history);
+  
+  // Add current message
+  contents.push({
+    role: 'user',
+    parts: [{ text: message }]
+  });
 
   const requestBody = {
     contents,
     generationConfig: {
-      temperature: generationConfig.temperature || 0.7,
-      topP: generationConfig.top_p || 0.9,
-      maxOutputTokens: generationConfig.maxOutputTokens || 2048,
+      temperature: 0.7,
+      topP: 0.9,
+      maxOutputTokens: 2048,
     },
   };
-
-  if (systemInstruction) {
-    requestBody.systemInstruction = systemInstruction;
-  }
 
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -157,12 +158,15 @@ const callGeminiAPI = async (model, contents, generationConfig = {}, systemInstr
     throw new Error(`Gemini API error: ${response.status} ${errorText}`);
   }
 
-  return await response.json();
+  const data = await response.json();
+  return data;
 };
 
-// Handler principale
+/**
+ * Main handler
+ */
 export default async function handler(req, res) {
-  // Gestisci CORS
+  // Handle CORS
   const origin = req.headers.origin || req.headers.referer?.split('/').slice(0, 3).join('/');
   const isAllowed = ALLOWED_ORIGINS.some(allowed => {
     if (allowed.includes('*')) {
@@ -180,71 +184,66 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Access-Control-Max-Age', '86400');
 
+  // Handle preflight
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
+  // Only allow POST
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const { model, contents, temperature, top_p, maxOutputTokens, systemInstruction, images } = req.body;
+    const { message, model, history } = req.body;
 
-    if (!model || !contents) {
-      return res.status(400).json({ error: 'Missing required fields: model, contents' });
+    // Validate required fields
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid "message" field' });
     }
 
-    // Prepara contents con immagini se presenti
-    let processedContents = Array.isArray(contents) ? contents : [contents];
-    
-    if (images && images.length > 0) {
-      // Aggiungi immagini al primo messaggio user
-      const firstUserMessage = processedContents.find(c => c.role === 'user');
-      if (firstUserMessage && firstUserMessage.parts) {
-        images.forEach(image => {
-          const sanitized = sanitizeImage(image.data);
-          const mimeType = image.mimeType || getMimeType(image.data);
-          firstUserMessage.parts.push({
-            inline_data: {
-              mime_type: mimeType,
-              data: sanitized,
-            },
-          });
-        });
-      }
+    if (!model || typeof model !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid "model" field' });
     }
 
-    // Tenta chiamata API
+    // Validate history format if provided
+    if (history && !Array.isArray(history)) {
+      return res.status(400).json({ error: 'Invalid "history" field: must be an array' });
+    }
+
+    // Validate model
+    const validModels = [
+      'gemini-1.5-pro',
+      'gemini-1.5-flash',
+      'gemini-2.0-flash-lite-preview'
+    ];
+
+    if (!validModels.includes(model)) {
+      return res.status(400).json({ 
+        error: `Invalid model. Must be one of: ${validModels.join(', ')}` 
+      });
+    }
+
+    // Call Gemini API
     let result;
     let modelUsed = model;
     let fallbackApplied = false;
 
     try {
-      result = await callGeminiAPI(
-        model,
-        processedContents,
-        { temperature, top_p, maxOutputTokens },
-        systemInstruction
-      );
+      result = await callGeminiAPI(model, message, history || []);
     } catch (error) {
-      // Se il modello non è disponibile, fallback a gemini-2.5-flash
+      // Fallback to gemini-1.5-flash if model not available
       if (error.message.includes('404') || error.message.includes('400')) {
-        console.warn(`Model ${model} not available, falling back to gemini-2.5-flash`);
-        modelUsed = 'gemini-2.5-flash';
+        console.warn(`Model ${model} not available, falling back to gemini-1.5-flash`);
+        modelUsed = 'gemini-1.5-flash';
         fallbackApplied = true;
-        result = await callGeminiAPI(
-          modelUsed,
-          processedContents,
-          { temperature, top_p, maxOutputTokens },
-          systemInstruction
-        );
+        result = await callGeminiAPI(modelUsed, message, history || []);
       } else {
         throw error;
       }
     }
 
-    // Estrai risposta
+    // Extract reply from response
     const reply = result.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated';
 
     return res.status(200).json({
@@ -253,7 +252,7 @@ export default async function handler(req, res) {
       fallbackApplied,
     });
   } catch (error) {
-    console.error('Error in generate API:', error);
+    console.error('Error in /api/chat:', error);
     return res.status(500).json({
       error: 'Internal server error',
       message: error.message,

@@ -20,108 +20,17 @@ import {
 import { db, storage } from '../config/firebase';
 import { MODELS, DEFAULT_MODEL } from '../constants/models';
 
-// Convert File to base64
-const fileToBase64 = (file) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-};
-
-// Convert image URL to base64 (for images already uploaded to Firebase)
-const imageUrlToBase64 = async (imageUrl) => {
+/**
+ * Call /api/chat endpoint
+ * Simplified API call - backend handles all Gemini formatting
+ */
+const callChatAPI = async (message, model, history = []) => {
   try {
-    const response = await fetch(imageUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch image: ${response.status}`);
-    }
-    const blob = await response.blob();
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  } catch (error) {
-    console.error('Error converting image URL to base64:', error);
-    return null;
-  }
-};
-
-// Call Google Gemini API via serverless function
-const callGeminiAPI = async (message, model, imageFiles = [], imageUrls = [], conversationHistory = []) => {
-  try {
-    console.log('🔄 Calling Gemini API:', { model, messageLength: message?.length, imageFiles: imageFiles.length, imageUrls: imageUrls.length });
+    console.log('🔄 Calling /api/chat:', { model, messageLength: message?.length, historyLength: history.length });
     
-    // Prepara contents con storia conversazione
-    const contents = [];
-    
-    // Aggiungi storia conversazione (ultimi 10 messaggi per evitare token limit)
-    const recentHistory = conversationHistory.slice(-10);
-    recentHistory.forEach(msg => {
-      contents.push({
-        role: msg.role === 'user' ? 'user' : 'model',
-        parts: [{ text: msg.content }]
-      });
-    });
-
-    // Aggiungi nuovo messaggio utente
-    const userParts = [{ text: message || '' }];
-    
-    // Converti File objects a base64
-    if (imageFiles && imageFiles.length > 0) {
-      for (const file of imageFiles) {
-        try {
-          const base64Image = await fileToBase64(file);
-          if (base64Image) {
-            // Estrai MIME type e data
-            const mimeMatch = base64Image.match(/data:([^;]+);base64,(.+)/);
-            if (mimeMatch) {
-              userParts.push({
-                inline_data: {
-                  mime_type: mimeMatch[1],
-                  data: mimeMatch[2]
-                }
-              });
-              console.log('✅ Image file converted to base64:', file.name);
-            }
-          }
-        } catch (error) {
-          console.error('Error converting file to base64:', error);
-        }
-      }
-    }
-    
-    // Converti image URLs a base64 (per immagini già caricate su Firebase)
-    if (imageUrls && imageUrls.length > 0) {
-      for (const imageUrl of imageUrls) {
-        const base64Image = await imageUrlToBase64(imageUrl);
-        if (base64Image) {
-          const mimeMatch = base64Image.match(/data:([^;]+);base64,(.+)/);
-          if (mimeMatch) {
-            userParts.push({
-              inline_data: {
-                mime_type: mimeMatch[1],
-                data: mimeMatch[2]
-              }
-            });
-            console.log('✅ Image URL converted to base64:', imageUrl);
-          }
-        }
-      }
-    }
-
-    contents.push({
-      role: 'user',
-      parts: userParts
-    });
-
-    // Determina API endpoint
-    // In produzione su Vercel usa /api/generate, in sviluppo locale potrebbe servire URL completo
+    // Determine API endpoint
     const isDevelopment = import.meta.env.DEV;
-    const apiUrl = import.meta.env.VITE_API_URL || (isDevelopment ? 'http://localhost:3000/api/generate' : '/api/generate');
+    const apiUrl = import.meta.env.VITE_API_URL || (isDevelopment ? 'http://localhost:3000/api/chat' : '/api/chat');
     
     console.log('📡 Calling API:', apiUrl);
 
@@ -131,11 +40,9 @@ const callGeminiAPI = async (message, model, imageFiles = [], imageUrls = [], co
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        message: message || '',
         model: model || DEFAULT_MODEL,
-        contents: contents,
-        temperature: 0.7,
-        top_p: 0.9,
-        maxOutputTokens: 2048,
+        history: history || [],
       }),
     });
 
@@ -155,7 +62,7 @@ const callGeminiAPI = async (message, model, imageFiles = [], imageUrls = [], co
     console.log('✅ API Response received:', { modelUsed: data.modelUsed, fallbackApplied: data.fallbackApplied });
     return data.reply || 'No response generated';
   } catch (error) {
-    console.error('❌ Error calling Gemini API:', error);
+    console.error('❌ Error calling /api/chat:', error);
     throw error;
   }
 };
@@ -416,13 +323,19 @@ export const useChatStore = create((set, get) => ({
       console.log('✅ User message saved to Firebase:', { activeChatId, messageCount: newMessages.length });
 
       // Get assistant response from Google Gemini
-      // Passa sia i File objects che gli URL (per supportare entrambi i casi)
-      const assistantResponse = await callGeminiAPI(
+      // Convert current messages to history format (only text content for now)
+      const history = currentMessages
+        .filter(msg => msg.role === 'user' || msg.role === 'assistant')
+        .map(msg => ({
+          role: msg.role,
+          content: msg.content || ''
+        }))
+        .slice(-10); // Last 10 messages to avoid token limits
+
+      const assistantResponse = await callChatAPI(
         content || (imageFiles.length > 0 ? 'Describe this image' : ''),
         currentModel,
-        imageFiles, // File objects (per conversione diretta)
-        imageUrls,  // URLs (per immagini già caricate)
-        currentMessages // Pass conversation history
+        history
       );
       
       // Add assistant message
