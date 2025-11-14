@@ -5,12 +5,15 @@ import { useChatStore, testFirestoreRead, testFirestoreWrite } from '../store/ch
  * Minimal Chat UI Component with Firestore persistence
  */
 const ChatUI = () => {
-  const { messages, sendMessage, loadMessages, firestoreError, loading } = useChatStore();
+  const { messages, sendMessage, sendImageMessage, generateImage, loadMessages, firestoreError, loading } = useChatStore();
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [firestoreStatus, setFirestoreStatus] = useState(null);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
   const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   // Load messages on mount
   useEffect(() => {
@@ -67,6 +70,48 @@ const ChatUI = () => {
     setTimeout(() => setFirestoreStatus(null), 3000);
   };
 
+  const handleImageSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      setSelectedImage(file);
+      const previewUrl = URL.createObjectURL(file);
+      setImagePreview(previewUrl);
+    }
+    // Reset input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleSendImage = async () => {
+    if (!selectedImage || isLoading) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      await sendImageMessage(selectedImage);
+      setSelectedImage(null);
+      if (imagePreview) {
+        URL.revokeObjectURL(imagePreview);
+        setImagePreview(null);
+      }
+    } catch (error) {
+      console.error('Error sending image:', error);
+      setError(error.message || 'Failed to send image');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setSelectedImage(null);
+    if (imagePreview) {
+      URL.revokeObjectURL(imagePreview);
+      setImagePreview(null);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gray-950 text-white">
       {/* Header */}
@@ -98,7 +143,26 @@ const ChatUI = () => {
                       : 'bg-gray-800 text-gray-100'
                   }`}
                 >
-                  <p className="whitespace-pre-wrap">{message.content}</p>
+                  {/* Text content */}
+                  {message.content && (
+                    <p className="whitespace-pre-wrap mb-2">{message.content}</p>
+                  )}
+                  {/* Image from base64 (assistant) */}
+                  {message.imageBase64 && (
+                    <img
+                      src={`data:image/png;base64,${message.imageBase64}`}
+                      alt="Generated image"
+                      className="max-w-[240px] rounded-lg mt-2"
+                    />
+                  )}
+                  {/* Image from local preview (user) */}
+                  {message.localPreviewUrl && (
+                    <img
+                      src={message.localPreviewUrl}
+                      alt="Uploaded image"
+                      className="max-w-[240px] rounded-lg mt-2"
+                    />
+                  )}
                 </div>
               </div>
             ))
@@ -153,7 +217,51 @@ const ChatUI = () => {
               Test Write
             </button>
           </div>
+          {/* Image Preview */}
+          {imagePreview && (
+            <div className="mb-3 relative inline-block">
+              <img
+                src={imagePreview}
+                alt="Preview"
+                className="max-w-[240px] rounded-lg border border-gray-700"
+              />
+              <button
+                type="button"
+                onClick={handleRemoveImage}
+                className="absolute -top-2 -right-2 bg-red-600 hover:bg-red-700 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs"
+              >
+                ×
+              </button>
+            </div>
+          )}
           <div className="flex gap-3">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageSelect}
+              className="hidden"
+              id="image-upload"
+            />
+            <label
+              htmlFor="image-upload"
+              className="px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg cursor-pointer transition-colors flex items-center"
+            >
+              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              Image
+            </label>
+            {selectedImage && (
+              <button
+                type="button"
+                onClick={handleSendImage}
+                disabled={isLoading}
+                className="px-4 py-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+              >
+                Send Image
+              </button>
+            )}
             <input
               type="text"
               value={input}

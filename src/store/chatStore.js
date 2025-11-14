@@ -75,7 +75,8 @@ export const useChatStore = create((set, get) => ({
         loadedMessages.push({
           id: doc.id,
           role: data.role,
-          content: data.text,
+          content: data.text || '',
+          imageBase64: data.imageBase64 || null,
           timestamp: data.createdAt?.toMillis?.() || data.createdAt?.seconds * 1000 || Date.now(),
           model: data.model || 'gemini-2.5-flash'
         });
@@ -124,7 +125,8 @@ export const useChatStore = create((set, get) => ({
               const newMessage = {
                 id: change.doc.id,
                 role: data.role,
-                content: data.text,
+                content: data.text || '',
+                imageBase64: data.imageBase64 || null,
                 timestamp: data.createdAt?.toMillis?.() || data.createdAt?.seconds * 1000 || Date.now(),
                 model: data.model || 'gemini-2.5-flash'
               };
@@ -160,15 +162,17 @@ export const useChatStore = create((set, get) => ({
   /**
    * Save message to Firestore
    */
-  saveMessageToFirestore: async (role, text, model = 'gemini-2.5-flash') => {
+  saveMessageToFirestore: async (role, text, model = 'gemini-2.5-flash', imageBase64 = null) => {
     const { sessionId } = get();
     
     try {
       const messagesRef = getMessagesRef(sessionId);
       const messageData = {
         role,
-        text,
+        text: text || null,
         model,
+        imageUrl: null, // Images not saved to Firestore in this phase
+        imageBase64: imageBase64 || null, // Store base64 for assistant images
         createdAt: serverTimestamp()
       };
 
@@ -183,12 +187,151 @@ export const useChatStore = create((set, get) => ({
   },
 
   /**
+   * Send image message (user uploads image)
+   */
+  sendImageMessage: async (file) => {
+    const { sessionId } = get();
+    
+    try {
+      // Create local preview URL
+      const localPreviewUrl = URL.createObjectURL(file);
+      
+      // Add user message with image preview immediately to UI
+      const userMessage = {
+        id: `temp-${Date.now()}`,
+        role: 'user',
+        content: '',
+        localPreviewUrl,
+        imageFile: file,
+        timestamp: Date.now()
+      };
+
+      set(state => ({
+        messages: [...state.messages, userMessage]
+      }));
+
+      // Save to Firestore (imageUrl: null as per requirements)
+      try {
+        await get().saveMessageToFirestore('user', null, 'gemini-2.5-flash', null);
+      } catch (firestoreError) {
+        console.warn('[Store] Firestore save failed for image message:', firestoreError);
+      }
+
+      // Optionally call API to process image or generate response
+      // For now, just show the image in chat
+      console.log('[Store] Image message added to chat');
+
+      return true;
+    } catch (error) {
+      console.error('[Store] Error sending image message:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Generate image from prompt
+   */
+  generateImage: async (prompt) => {
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || '/api/generateImage';
+      
+      console.log('[Store] Calling image generation API:', apiUrl);
+      console.log('[Store] Request body:', { prompt });
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          prompt: prompt,
+          size: "512x512"
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText || `HTTP ${response.status}` };
+        }
+        throw new Error(errorData.error || errorData.message || `API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('[Store] Image generation response received');
+
+      // Add assistant message with image
+      const assistantMessage = {
+        id: `temp-${Date.now()}`,
+        role: 'assistant',
+        content: '',
+        imageBase64: data.imageBase64,
+        timestamp: Date.now()
+      };
+
+      set(state => ({
+        messages: [...state.messages, assistantMessage]
+      }));
+
+      // Save to Firestore (imageUrl: null, but store imageBase64)
+      try {
+        await get().saveMessageToFirestore('assistant', null, 'gemini-2.5-flash', data.imageBase64);
+      } catch (firestoreError) {
+        console.warn('[Store] Firestore save failed for generated image:', firestoreError);
+      }
+
+      return data.imageBase64;
+    } catch (error) {
+      console.error('[Store] Error generating image:', error);
+      throw error;
+    }
+  },
+
+  /**
    * Send a message to /api/chat and get reply
    */
   sendMessage: async (message) => {
     const { sessionId } = get();
     
     try {
+      // Check if message requests image generation
+      const lowerMessage = message.toLowerCase();
+      const isImageRequest = lowerMessage.includes('generate an image') || 
+                            lowerMessage.includes('create an image') ||
+                            lowerMessage.includes('generate image') ||
+                            lowerMessage.startsWith('image:');
+
+      if (isImageRequest) {
+        // Extract prompt from message
+        const prompt = message.replace(/^(generate an image|create an image|generate image|image:)\s*/i, '').trim() || message;
+        
+        // Add user message immediately to UI
+        const userMessage = {
+          id: `temp-${Date.now()}`,
+          role: 'user',
+          content: message,
+          timestamp: Date.now()
+        };
+
+        set(state => ({
+          messages: [...state.messages, userMessage]
+        }));
+
+        // Save user message to Firestore
+        try {
+          await get().saveMessageToFirestore('user', message);
+        } catch (firestoreError) {
+          console.warn('[Store] Firestore save failed, continuing with API call:', firestoreError);
+        }
+
+        // Generate image instead of text response
+        await get().generateImage(prompt);
+        return null;
+      }
+
       // Add user message immediately to UI
       const userMessage = {
         id: `temp-${Date.now()}`,
