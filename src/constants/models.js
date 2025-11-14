@@ -73,13 +73,24 @@ export const isGeminiModel = (model) => {
  */
 export const getModelDisplayName = (model) => {
   const names = {
+    // Text models
     "gemini-2.5-pro": "Gemini 2.5 Pro",
     "gemini-2.5-flash": "Gemini 2.5 Flash",
     "gemini-2.5-flash-lite": "Gemini 2.5 Flash Lite",
-    "gemini-2.5-flash-image": "Gemini 2.5 Flash Image",
+    "gemini-1.5-pro": "Gemini 1.5 Pro",
+    "gemini-1.5-flash": "Gemini 1.5 Flash",
+    // Image models
+    "gemini-2.5-flash-image": "Gemini 2.5 Flash Image (Nano Banana)",
     "imagen-4": "Imagen 4",
     "imagen-4-ultra": "Imagen 4 Ultra",
-    "imagen-4-fast": "Imagen 4 Fast"
+    "imagen-4-fast": "Imagen 4 Fast",
+    "imagen-3": "Imagen 3",
+    // Vision models
+    "gemini-2.5-pro-vision": "Gemini 2.5 Pro Vision",
+    "gemini-1.5-pro-vision": "Gemini 1.5 Pro Vision",
+    // Audio models
+    "gemini-2.5-flash-audio": "Gemini 2.5 Flash Audio",
+    "gemini-1.5-flash-audio": "Gemini 1.5 Flash Audio"
   };
   return names[model] || model;
 };
