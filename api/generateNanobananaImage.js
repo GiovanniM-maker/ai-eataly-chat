@@ -1,4 +1,5 @@
 import { GoogleAuth } from "google-auth-library";
+import { loadModelConfigFromFirestore } from './helpers/firestoreConfig';
 
 // CORS allowed origins
 const ALLOWED_ORIGINS = [
@@ -55,10 +56,21 @@ function extractImageBase64(obj) {
 }
 
 /**
- * Call Vertex AI Gemini generateContent (NOT streaming)
- * ONLY for gemini-2.5-flash-image (Nanobanana)
+ * Extract text from response
  */
-const callNanobananaAPI = async (prompt) => {
+function extractText(obj) {
+  try {
+    return obj.candidates[0].content.parts.find(p => p.text)?.text || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Call Vertex AI Gemini generateContent (NOT streaming)
+ * Supports gemini-2.5-flash-image and gemini-2.5-nano-banana
+ */
+const callNanobananaAPI = async (prompt, modelConfig = null) => {
   console.log("[API:NANOBANANA] ========================================");
   console.log("[API:NANOBANANA] NANOBANANA IMAGE GENERATION REQUEST");
   console.log("[API:NANOBANANA] Prompt:", prompt);
@@ -81,6 +93,7 @@ const callNanobananaAPI = async (prompt) => {
   
   console.log("[API:NANOBANANA] Endpoint:", endpoint);
 
+  // Build request body with config
   const body = {
     contents: [
       {
@@ -90,8 +103,33 @@ const callNanobananaAPI = async (prompt) => {
     ]
   };
 
+  // Add system instruction if configured
+  if (modelConfig?.systemPrompt) {
+    body.systemInstruction = {
+      role: 'system',
+      parts: [{ text: modelConfig.systemPrompt }]
+    };
+  }
+
+  // Add generation config
+  body.generationConfig = {
+    temperature: modelConfig?.temperature ?? 0.7,
+    topP: modelConfig?.topP ?? 0.95,
+    maxOutputTokens: modelConfig?.maxOutputTokens ?? 8192
+  };
+
+  // Add response modalities based on outputType
+  const outputType = modelConfig?.outputType || 'IMAGE';
+  if (outputType === 'TEXT+IMAGE') {
+    body.generationConfig.responseModalities = ['TEXT', 'IMAGE'];
+  } else if (outputType === 'TEXT') {
+    body.generationConfig.responseModalities = ['TEXT'];
+  } else {
+    body.generationConfig.responseModalities = ['IMAGE'];
+  }
+
   console.log("[API:NANOBANANA] Request Body:", JSON.stringify(body, null, 2));
-  console.log("[API:NANOBANANA] NOTE: NO temperature, top_p, response_modalities, generationConfig");
+  console.log("[API:NANOBANANA] Output Type:", outputType);
 
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -124,19 +162,33 @@ const callNanobananaAPI = async (prompt) => {
   console.log(JSON.stringify(data, null, 2));
   console.log("[API:NANOBANANA] ========================================");
 
+  // Extract both text and image based on outputType
+  const outputType = modelConfig?.outputType || 'IMAGE';
+  const text = extractText(data);
   const imageBase64 = extractImageBase64(data);
 
-  if (!imageBase64) {
-    console.error("[API:NANOBANANA] Failed to extract image from response");
-    console.error("[API:NANOBANANA] Full response structure:", JSON.stringify(data, null, 2));
-    throw new Error('No image data found in Nanobanana API response');
-  }
-
+  if (outputType === 'TEXT+IMAGE') {
+    console.log("[API:NANOBANANA] Extracted TEXT+IMAGE response");
+    console.log("[API:NANOBANANA] Text length:", text?.length || 0);
+    console.log("[API:NANOBANANA] Image base64 length:", imageBase64?.length || 0);
+    return { text, imageBase64 };
+  } else if (outputType === 'TEXT') {
+    if (!text) {
+      throw new Error('No text data found in Nanobanana API response');
+    }
+    console.log("[API:NANOBANANA] Extracted TEXT response");
+    return { text, imageBase64: null };
+  } else {
+    // IMAGE mode
+    if (!imageBase64) {
+      console.error("[API:NANOBANANA] Failed to extract image from response");
+      console.error("[API:NANOBANANA] Full response structure:", JSON.stringify(data, null, 2));
+      throw new Error('No image data found in Nanobanana API response');
+    }
     console.log("[API:NANOBANANA] Image extracted successfully");
     console.log("[API:NANOBANANA] Final base64 length:", imageBase64.length, "characters");
-    console.log("[API:NANOBANANA] ========================================");
-
-    return imageBase64;
+    return { text: null, imageBase64 };
+  }
 };
 
 /**
@@ -180,27 +232,53 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing or invalid "prompt" field' });
     }
 
-    // ONLY allow gemini-2.5-flash-image
+    // Allow gemini-2.5-flash-image and gemini-2.5-nano-banana
     const modelToUse = model || "gemini-2.5-flash-image";
+    const allowedModels = ['gemini-2.5-flash-image', 'gemini-2.5-nano-banana'];
     
-    if (modelToUse.toLowerCase() !== 'gemini-2.5-flash-image') {
+    if (!allowedModels.includes(modelToUse.toLowerCase())) {
       return res.status(400).json({ 
-        error: `Wrong endpoint: model "${modelToUse}" is not supported. This endpoint only accepts "gemini-2.5-flash-image" (Nanobanana). Use /api/chat for Gemini 2.5 Flash or /api/generateImage for Imagen 4.` 
+        error: `Wrong endpoint: model "${modelToUse}" is not supported. This endpoint accepts "gemini-2.5-flash-image" or "gemini-2.5-nano-banana". Use /api/chat for Gemini 2.5 Flash or /api/generateImage for Imagen 4.` 
       });
     }
 
-    // Generate image via Vertex AI generateContent (NOT streaming)
-    console.log('[API:NANOBANANA] Calling Nanobanana API:', { prompt, model: modelToUse });
-    const imageBase64 = await callNanobananaAPI(prompt);
-
-    if (!imageBase64) {
-      return res.status(500).json({ error: 'Failed to generate image' });
+    // Load model configuration from Firestore
+    console.log('[API:NANOBANANA] Loading model config from Firestore...');
+    const modelConfig = await loadModelConfigFromFirestore(modelToUse);
+    
+    // Check if model is enabled
+    if (!modelConfig.enabled) {
+      return res.status(403).json({ 
+        error: `Model "${modelToUse}" is currently disabled. Please enable it in Model Settings.` 
+      });
     }
 
-    return res.status(200).json({
-      image: imageBase64,
-      imageBase64: imageBase64 // Backward compatibility
-    });
+    // Generate via Vertex AI generateContent (NOT streaming)
+    console.log('[API:NANOBANANA] Calling Nanobanana API:', { prompt, model: modelToUse, outputType: modelConfig.outputType });
+    const result = await callNanobananaAPI(prompt, modelConfig);
+
+    // Return based on output type
+    if (modelConfig.outputType === 'TEXT+IMAGE') {
+      return res.status(200).json({
+        text: result.text,
+        image: result.imageBase64,
+        imageBase64: result.imageBase64 // Backward compatibility
+      });
+    } else if (modelConfig.outputType === 'TEXT') {
+      return res.status(200).json({
+        text: result.text,
+        reply: result.text // For compatibility
+      });
+    } else {
+      // IMAGE mode
+      if (!result.imageBase64) {
+        return res.status(500).json({ error: 'Failed to generate image' });
+      }
+      return res.status(200).json({
+        image: result.imageBase64,
+        imageBase64: result.imageBase64 // Backward compatibility
+      });
+    }
   } catch (error) {
     console.error('[API:NANOBANANA] ERROR:', error);
     return res.status(500).json({

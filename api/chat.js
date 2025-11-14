@@ -1,4 +1,5 @@
 import { createSign } from 'crypto';
+import { loadModelConfigFromFirestore } from './helpers/firestoreConfig';
 
 // CORS allowed origins
 const ALLOWED_ORIGINS = [
@@ -113,7 +114,7 @@ const getAccessToken = async () => {
  * Call Google Gemini API (REST API v1)
  * ONLY for gemini-2.5-flash (text model)
  */
-const callGeminiAPI = async (model, message) => {
+const callGeminiAPI = async (model, message, modelConfig = null) => {
   const accessToken = await getAccessToken();
   
   // Gemini 2.x models use v1 API
@@ -122,7 +123,9 @@ const callGeminiAPI = async (model, message) => {
   
   console.log("[API] Using model:", model);
   console.log("[API] Endpoint:", endpoint);
+  console.log("[API] Model config:", modelConfig ? 'loaded' : 'using defaults');
 
+  // Build request body with config
   const requestBody = {
     contents: [
       {
@@ -130,6 +133,21 @@ const callGeminiAPI = async (model, message) => {
         parts: [{ text: message }]
       }
     ]
+  };
+
+  // Add system instruction if configured
+  if (modelConfig?.systemPrompt) {
+    requestBody.systemInstruction = {
+      role: 'system',
+      parts: [{ text: modelConfig.systemPrompt }]
+    };
+  }
+
+  // Add generation config
+  requestBody.generationConfig = {
+    temperature: modelConfig?.temperature ?? 0.7,
+    topP: modelConfig?.topP ?? 0.95,
+    maxOutputTokens: modelConfig?.maxOutputTokens ?? 8192
   };
 
   const response = await fetch(endpoint, {
@@ -201,9 +219,20 @@ export default async function handler(req, res) {
       });
     }
 
-    // Call Gemini API
+    // Load model configuration from Firestore
+    console.log('[API] Loading model config from Firestore...');
+    const modelConfig = await loadModelConfigFromFirestore(model);
+    
+    // Check if model is enabled
+    if (!modelConfig.enabled) {
+      return res.status(403).json({ 
+        error: `Model "${model}" is currently disabled. Please enable it in Model Settings.` 
+      });
+    }
+
+    // Call Gemini API with config
     console.log('[API] Calling Gemini API:', { model, messageLength: message.length });
-    const result = await callGeminiAPI(model, message);
+    const result = await callGeminiAPI(model, message, modelConfig);
 
     // Extract reply from response
     const reply = result.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated';

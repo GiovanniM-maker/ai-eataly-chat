@@ -17,6 +17,7 @@ import {
   updateDoc,
   deleteDoc,
   writeBatch,
+  setDoc,
   Timestamp
 } from 'firebase/firestore';
 import { db, app } from '../config/firebase';
@@ -1098,6 +1099,166 @@ export const useChatStore = create((set, get) => ({
       });
     
     console.log('[Store] New chat created:', newChatId);
+  },
+
+  /**
+   * Model Configuration Management
+   */
+  modelConfigs: {}, // Cache for model configs
+
+  /**
+   * Load model configuration from Firestore
+   */
+  loadModelConfig: async (modelId) => {
+    try {
+      // Check cache first
+      const { modelConfigs } = get();
+      if (modelConfigs[modelId]) {
+        return modelConfigs[modelId];
+      }
+
+      console.log('[Store] Loading model config for:', modelId);
+      const configRef = doc(db, 'modelConfigs', modelId);
+      const configSnap = await getDoc(configRef);
+
+      if (configSnap.exists()) {
+        const data = configSnap.data();
+        const config = {
+          modelId: data.modelId || modelId,
+          displayName: data.displayName || modelId,
+          description: data.description || '',
+          systemPrompt: data.systemPrompt || '',
+          temperature: data.temperature ?? 0.7,
+          topP: data.topP ?? 0.95,
+          maxOutputTokens: data.maxOutputTokens ?? 8192,
+          outputType: data.outputType || 'TEXT',
+          aspectRatio: data.aspectRatio || '1:1',
+          sampleCount: data.sampleCount ?? 1,
+          safetySettings: data.safetySettings || {},
+          enabled: data.enabled !== false,
+          updatedAt: data.updatedAt || Date.now()
+        };
+        
+        // Update cache
+        set(state => ({
+          modelConfigs: { ...state.modelConfigs, [modelId]: config }
+        }));
+        
+        return config;
+      } else {
+        // Create default config
+        const defaultConfig = {
+          modelId,
+          displayName: modelId,
+          description: '',
+          systemPrompt: '',
+          temperature: 0.7,
+          topP: 0.95,
+          maxOutputTokens: 8192,
+          outputType: modelId.includes('image') || modelId.includes('imagen') ? 'IMAGE' : 'TEXT',
+          aspectRatio: '1:1',
+          sampleCount: 1,
+          safetySettings: {},
+          enabled: true,
+          updatedAt: Date.now()
+        };
+        
+        // Save default to Firestore
+        await setDoc(configRef, defaultConfig);
+        
+        // Update cache
+        set(state => ({
+          modelConfigs: { ...state.modelConfigs, [modelId]: defaultConfig }
+        }));
+        
+        return defaultConfig;
+      }
+    } catch (error) {
+      console.error('[Store] Error loading model config:', error);
+      // Return default config on error
+      return {
+        modelId,
+        displayName: modelId,
+        description: '',
+        systemPrompt: '',
+        temperature: 0.7,
+        topP: 0.95,
+        maxOutputTokens: 8192,
+        outputType: 'TEXT',
+        aspectRatio: '1:1',
+        sampleCount: 1,
+        safetySettings: {},
+        enabled: true,
+        updatedAt: Date.now()
+      };
+    }
+  },
+
+  /**
+   * Save model configuration to Firestore
+   */
+  saveModelConfig: async (config) => {
+    try {
+      console.log('[Store] Saving model config for:', config.modelId);
+      const configRef = doc(db, 'modelConfigs', config.modelId);
+      
+      const configData = {
+        ...config,
+        updatedAt: Date.now()
+      };
+      
+      await setDoc(configRef, configData, { merge: true });
+      
+      // Update cache
+      set(state => ({
+        modelConfigs: { ...state.modelConfigs, [config.modelId]: configData }
+      }));
+      
+      console.log('[Store] Model config saved successfully');
+      return true;
+    } catch (error) {
+      console.error('[Store] Error saving model config:', error);
+      set({ firestoreError: error.message });
+      throw error;
+    }
+  },
+
+  /**
+   * Load all model configs
+   */
+  loadAllModelConfigs: async () => {
+    try {
+      console.log('[Store] Loading all model configs');
+      const configsRef = collection(db, 'modelConfigs');
+      const snapshot = await getDocs(configsRef);
+      
+      const configs = {};
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        configs[doc.id] = {
+          modelId: doc.id,
+          displayName: data.displayName || doc.id,
+          description: data.description || '',
+          systemPrompt: data.systemPrompt || '',
+          temperature: data.temperature ?? 0.7,
+          topP: data.topP ?? 0.95,
+          maxOutputTokens: data.maxOutputTokens ?? 8192,
+          outputType: data.outputType || 'TEXT',
+          aspectRatio: data.aspectRatio || '1:1',
+          sampleCount: data.sampleCount ?? 1,
+          safetySettings: data.safetySettings || {},
+          enabled: data.enabled !== false,
+          updatedAt: data.updatedAt || Date.now()
+        };
+      });
+      
+      set({ modelConfigs: configs });
+      console.log('[Store] Loaded', Object.keys(configs).length, 'model configs');
+      return configs;
+    } catch (error) {
+      console.error('[Store] Error loading all model configs:', error);
+      return {};
+    }
   }
 }));
 

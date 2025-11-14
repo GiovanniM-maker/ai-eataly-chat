@@ -1,4 +1,5 @@
 import { GoogleAuth } from "google-auth-library";
+import { loadModelConfigFromFirestore } from './helpers/firestoreConfig';
 
 // CORS allowed origins
 const ALLOWED_ORIGINS = [
@@ -11,7 +12,7 @@ const ALLOWED_ORIGINS = [
  * Call Vertex AI Imagen predict endpoint
  * ONLY for imagen-4
  */
-const callImagenAPI = async (prompt) => {
+const callImagenAPI = async (prompt, modelConfig = null) => {
   console.log("[API:IMAGEN] ========================================");
   console.log("[API:IMAGEN] IMAGEN 4 IMAGE GENERATION REQUEST");
   console.log("[API:IMAGEN] Prompt:", prompt);
@@ -35,7 +36,7 @@ const callImagenAPI = async (prompt) => {
     
     console.log("[API:IMAGEN] Endpoint:", endpoint);
 
-    // Request body: { instances: [{ prompt }], parameters: { sampleCount: 1 } }
+    // Request body: { instances: [{ prompt }], parameters: { sampleCount, aspectRatio } }
     const requestBody = {
       instances: [
         {
@@ -43,7 +44,8 @@ const callImagenAPI = async (prompt) => {
         }
       ],
       parameters: {
-        sampleCount: 1
+        sampleCount: modelConfig?.sampleCount ?? 1,
+        aspectRatio: modelConfig?.aspectRatio || '1:1'
       }
     };
 
@@ -164,9 +166,20 @@ export default async function handler(req, res) {
       });
     }
 
+    // Load model configuration from Firestore
+    console.log('[API:IMAGEN] Loading model config from Firestore...');
+    const modelConfig = await loadModelConfigFromFirestore(modelToUse);
+    
+    // Check if model is enabled
+    if (!modelConfig.enabled) {
+      return res.status(403).json({ 
+        error: `Model "${modelToUse}" is currently disabled. Please enable it in Model Settings.` 
+      });
+    }
+
     // Generate image via Vertex AI
     console.log('[API:IMAGEN] Calling Imagen API:', { prompt, model: modelToUse });
-    const imageBase64 = await callImagenAPI(prompt);
+    const imageBase64 = await callImagenAPI(prompt, modelConfig);
 
     if (!imageBase64) {
       return res.status(500).json({ error: 'Failed to generate image' });

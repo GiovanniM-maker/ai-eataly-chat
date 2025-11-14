@@ -42,6 +42,15 @@ export function resolveModelConfig(modelName) {
       provider: 'nanobanana',
       endpoint: '/api/generateNanobananaImage',
       googleModel: 'gemini-2.5-flash-image'
+    },
+    
+    // Multimodal model - Vertex AI Gemini (Nanobanana Multimodal)
+    'gemini-2.5-nano-banana': {
+      name: 'gemini-2.5-nano-banana',
+      type: 'image',
+      provider: 'nanobanana',
+      endpoint: '/api/generateNanobananaImage',
+      googleModel: 'gemini-2.5-flash-image'
     }
   };
 
