@@ -443,7 +443,7 @@ export const useChatStore = create((set, get) => ({
   },
 
   /**
-   * Generate image from prompt
+   * Generate image from prompt (Imagen 4 via Vertex AI)
    */
   generateImage: async (prompt, model = null) => {
     const { selectedModel } = get();
@@ -455,15 +455,12 @@ export const useChatStore = create((set, get) => ({
       const apiUrl = import.meta.env.VITE_API_URL || config.endpoint;
       
       console.log('[Store] ========================================');
-      console.log('[Store] IMAGE GENERATION REQUEST');
+      console.log('[Store] IMAGEN 4 IMAGE GENERATION REQUEST');
       console.log('[Store] Model:', modelToUse);
-      console.log('[Store] Google Model:', config.googleModel);
       console.log('[Store] Provider:', config.provider);
       console.log('[Store] Endpoint:', apiUrl);
       console.log('[Store] Prompt:', prompt);
-      console.log('[Store] Model Config:', config);
 
-      // Pass ONLY model and prompt (backend determines provider from model)
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -488,9 +485,8 @@ export const useChatStore = create((set, get) => ({
 
       const data = await response.json();
       console.log('[Store] Image generation response received');
-      console.log('[Store] Response keys:', Object.keys(data));
       
-      // Extract imageBase64 from response (support both 'image' and 'imageBase64' fields)
+      // Extract imageBase64 from response
       const imageBase64 = data.image || data.imageBase64;
       
       if (!imageBase64) {
@@ -500,9 +496,6 @@ export const useChatStore = create((set, get) => ({
 
       // Create data URL for immediate display
       const imageDataUrl = `data:image/png;base64,${imageBase64}`;
-      
-      // Extract text if present (multimodal models)
-      const textContent = data.text || null;
 
       // Add assistant message with base64 image (temporary)
       const assistantMessage = {
@@ -510,7 +503,6 @@ export const useChatStore = create((set, get) => ({
         type: 'image',
         role: 'assistant',
         sender: 'assistant',
-        content: textContent || '', // Text from multimodal if present
         model: modelToUse,
         imageBase64: imageBase64, // Temporary, will be replaced with URL
         imageUrl: imageDataUrl, // Data URL for immediate display
@@ -518,9 +510,6 @@ export const useChatStore = create((set, get) => ({
       };
       
       console.log('[Store] Image extracted, length:', imageBase64.length);
-      if (textContent) {
-        console.log('[Store] Text extracted:', textContent.substring(0, 100));
-      }
 
       set(state => ({
         messages: [...state.messages, assistantMessage]
@@ -530,7 +519,7 @@ export const useChatStore = create((set, get) => ({
       console.log('[Store] Processing generated image (resize & compress)...');
       
       // Convert base64 to Blob for processing
-      const base64Response = await fetch(`data:image/png;base64,${data.imageBase64}`);
+      const base64Response = await fetch(`data:image/png;base64,${imageBase64}`);
       const blob = await base64Response.blob();
       const file = new File([blob], 'generated-image.png', { type: 'image/png' });
       
@@ -581,6 +570,133 @@ export const useChatStore = create((set, get) => ({
   },
 
   /**
+   * Generate image from prompt (Nanobanana via Vertex AI streaming)
+   */
+  generateNanobananaImage: async (prompt, model = null) => {
+    const { selectedModel } = get();
+    const modelToUse = model || selectedModel;
+    const config = resolveModelConfig(modelToUse);
+    const tempMessageId = `temp-${Date.now()}`;
+    
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || config.endpoint;
+      
+      console.log('[Store] ========================================');
+      console.log('[Store] NANOBANANA IMAGE GENERATION REQUEST');
+      console.log('[Store] Model:', modelToUse);
+      console.log('[Store] Provider:', config.provider);
+      console.log('[Store] Endpoint:', apiUrl);
+      console.log('[Store] Prompt:', prompt);
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: config.googleModel,
+          prompt: prompt
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText || `HTTP ${response.status}` };
+        }
+        throw new Error(errorData.error || errorData.message || `API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('[Store] Image generation response received');
+      
+      // Extract imageBase64 from response
+      const imageBase64 = data.image || data.imageBase64;
+      
+      if (!imageBase64) {
+        console.error('[Store] No image data in response:', data);
+        throw new Error('No image data in API response');
+      }
+
+      // Create data URL for immediate display
+      const imageDataUrl = `data:image/png;base64,${imageBase64}`;
+
+      // Add assistant message with base64 image (temporary)
+      const assistantMessage = {
+        id: tempMessageId,
+        type: 'image',
+        role: 'assistant',
+        sender: 'assistant',
+        model: modelToUse,
+        imageBase64: imageBase64, // Temporary, will be replaced with URL
+        imageUrl: imageDataUrl, // Data URL for immediate display
+        timestamp: Date.now()
+      };
+      
+      console.log('[Store] Image extracted, length:', imageBase64.length);
+
+      set(state => ({
+        messages: [...state.messages, assistantMessage]
+      }));
+
+      // Process and compress generated image before upload
+      console.log('[Store] Processing generated image (resize & compress)...');
+      
+      // Convert base64 to Blob for processing
+      const base64Response = await fetch(`data:image/png;base64,${imageBase64}`);
+      const blob = await base64Response.blob();
+      const file = new File([blob], 'generated-image.png', { type: 'image/png' });
+      
+      const processed = await processImage(file, 1500);
+      console.log('[IMG] Generated image - Original:', `${(blob.size / 1024).toFixed(2)} KB`, 'Compressed:', `${(processed.compressedSize / 1024).toFixed(2)} KB`);
+      
+      // Convert processed blob to File for upload
+      const compressedFile = new File([processed.blob], 'generated-image.jpg', {
+        type: 'image/jpeg',
+        lastModified: Date.now()
+      });
+      
+      // Upload compressed file to PostImages.org
+      console.log('[Store] Uploading compressed generated image to PostImages.org...');
+      const imageUrl = await get().uploadImageToPostImages(compressedFile);
+
+      // Update message with imageUrl and remove imageBase64
+      set(state => ({
+        messages: state.messages.map(msg => 
+          msg.id === tempMessageId
+            ? { ...msg, url: imageUrl, imageBase64: null }
+            : msg
+        )
+      }));
+
+      // Save to Firestore with new structure (type: "image", url, sender)
+      try {
+        await get().saveMessageToFirestore('assistant', '', modelToUse, imageUrl);
+      } catch (firestoreError) {
+        console.warn('[Store] Firestore save failed for generated image:', firestoreError);
+        // Remove message from UI if Firestore save fails
+        set(state => ({
+          messages: state.messages.filter(msg => msg.id !== tempMessageId)
+        }));
+        throw new Error('Failed to save generated image to Firestore');
+      }
+
+      console.log('[Store] Generated image uploaded and saved successfully');
+      return imageUrl;
+    } catch (error) {
+      console.error('[Store] Error generating Nanobanana image:', error);
+      // Remove message from UI on error
+      set(state => ({
+        messages: state.messages.filter(msg => msg.id !== tempMessageId)
+      }));
+      throw error;
+    }
+  },
+
+  /**
    * Send a message using automatic model routing
    */
   sendMessage: async (message) => {
@@ -612,21 +728,18 @@ export const useChatStore = create((set, get) => ({
         console.warn('[Store] Firestore save failed, continuing with API call:', firestoreError);
       }
 
-      // Route to appropriate handler based on model type
-      if (config.type === 'image') {
-        // Image generation
+      // Route to appropriate handler based on model provider
+      if (config.provider === 'vertex-imagen') {
+        // Imagen 4 via Vertex AI
         const prompt = message;
         await get().generateImage(prompt, selectedModel);
         return null;
-      } else if (config.type === 'vision') {
-        // Vision analysis (requires image input - for now, treat as text)
-        await get().generateVision(message, selectedModel);
+      } else if (config.provider === 'vertex-gemini-image') {
+        // Nanobanana via Vertex AI streaming
+        const prompt = message;
+        await get().generateNanobananaImage(prompt, selectedModel);
         return null;
-      } else if (config.type === 'audio') {
-        // Audio processing
-        await get().generateAudio(message, selectedModel);
-        return null;
-      } else {
+      } else if (config.provider === 'google-text') {
         // Text generation (default)
         const apiUrl = import.meta.env.VITE_API_URL || config.endpoint;
         
@@ -687,156 +800,6 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
-  /**
-   * Generate vision analysis
-   */
-  generateVision: async (message, model = null) => {
-    const { selectedModel } = get();
-    const modelToUse = model || selectedModel;
-    const config = resolveModelConfig(modelToUse);
-    const tempMessageId = `temp-${Date.now()}`;
-    
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || config.endpoint;
-      
-      console.log('[Store] Calling vision API:', apiUrl);
-      console.log('[Store] Request body:', { message, model: config.googleModel });
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: message,
-          model: config.googleModel
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { error: errorText || `HTTP ${response.status}` };
-        }
-        throw new Error(errorData.error || errorData.message || `API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log('[Store] Vision response received');
-
-      // Add assistant message to UI
-      const assistantMessage = {
-        id: tempMessageId,
-        role: 'assistant',
-        content: data.analysis || 'No analysis generated',
-        model: modelToUse,
-        messageType: 'vision',
-        timestamp: Date.now()
-      };
-
-      set(state => ({
-        messages: [...state.messages, assistantMessage]
-      }));
-
-      // Save to Firestore
-      try {
-        await get().saveMessageToFirestore('assistant', data.analysis || '', modelToUse, null, 'vision');
-      } catch (firestoreError) {
-        console.warn('[Store] Firestore save failed for vision message:', firestoreError);
-        set(state => ({
-          messages: state.messages.filter(msg => msg.id !== tempMessageId)
-        }));
-        throw new Error('Failed to save vision message to Firestore');
-      }
-
-      return data.analysis;
-    } catch (error) {
-      console.error('[Store] Error generating vision:', error);
-      set(state => ({
-        messages: state.messages.filter(msg => msg.id !== tempMessageId)
-      }));
-      throw error;
-    }
-  },
-
-  /**
-   * Generate audio response
-   */
-  generateAudio: async (message, model = null) => {
-    const { selectedModel } = get();
-    const modelToUse = model || selectedModel;
-    const config = resolveModelConfig(modelToUse);
-    const tempMessageId = `temp-${Date.now()}`;
-    
-    try {
-      const apiUrl = import.meta.env.VITE_API_URL || config.endpoint;
-      
-      console.log('[Store] Calling audio API:', apiUrl);
-      console.log('[Store] Request body:', { message, model: config.googleModel });
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: message,
-          model: config.googleModel
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { error: errorText || `HTTP ${response.status}` };
-        }
-        throw new Error(errorData.error || errorData.message || `API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log('[Store] Audio response received');
-
-      // Add assistant message to UI
-      const assistantMessage = {
-        id: tempMessageId,
-        role: 'assistant',
-        content: data.transcript || 'No transcript generated',
-        model: modelToUse,
-        messageType: 'audio',
-        audioUrl: data.audioUrl || null,
-        timestamp: Date.now()
-      };
-
-      set(state => ({
-        messages: [...state.messages, assistantMessage]
-      }));
-
-      // Save to Firestore
-      try {
-        await get().saveMessageToFirestore('assistant', data.transcript || '', modelToUse, null, 'audio', data.audioUrl);
-      } catch (firestoreError) {
-        console.warn('[Store] Firestore save failed for audio message:', firestoreError);
-        set(state => ({
-          messages: state.messages.filter(msg => msg.id !== tempMessageId)
-        }));
-        throw new Error('Failed to save audio message to Firestore');
-      }
-
-      return data.transcript;
-    } catch (error) {
-      console.error('[Store] Error generating audio:', error);
-      set(state => ({
-        messages: state.messages.filter(msg => msg.id !== tempMessageId)
-      }));
-      throw error;
-    }
-  },
 
   /**
    * Clear all messages and create new session

@@ -158,25 +158,6 @@ const ChatUI = () => {
                   {message.content && (
                     <p className="whitespace-pre-wrap mb-2">{message.content}</p>
                   )}
-                  {/* Vision analysis badge */}
-                  {message.messageType === 'vision' && (
-                    <div className="mb-2 px-2 py-1 bg-purple-600/30 rounded text-xs">
-                      👁️ Vision Analysis
-                    </div>
-                  )}
-                  {/* Audio transcript badge */}
-                  {message.messageType === 'audio' && (
-                    <div className="mb-2 px-2 py-1 bg-green-600/30 rounded text-xs">
-                      🔊 Audio Response
-                    </div>
-                  )}
-                  {/* Audio player */}
-                  {message.audioUrl && (
-                    <audio controls className="w-full mt-2">
-                      <source src={message.audioUrl} type="audio/mpeg" />
-                      Your browser does not support the audio element.
-                    </audio>
-                  )}
                   {/* Image messages: type === "image" with url */}
                   {message.type === 'image' && message.url && (
                     <img

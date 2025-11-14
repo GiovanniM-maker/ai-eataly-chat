@@ -1,12 +1,12 @@
 /**
- * Model Router - Automatic routing for all Gemini models
+ * Model Router - Automatic routing for 3 supported models
  * Determines endpoint, payload, and response handling based on model type
  */
 
 /**
  * Resolve model configuration
- * @param {string} modelName - Model identifier (e.g., "gemini-2.5-pro", "imagen-4")
- * @returns {Object} Configuration object with type, endpoint, and googleModel
+ * @param {string} modelName - Model identifier
+ * @returns {Object} Configuration object with type, endpoint, provider, and modelId
  */
 export function resolveModelConfig(modelName) {
   if (!modelName) {
@@ -15,109 +15,52 @@ export function resolveModelConfig(modelName) {
 
   const normalizedModel = modelName.toLowerCase().trim();
 
-  // TEXT MODELS
-  const textModels = {
-    'gemini-2.5-pro': {
-      type: 'text',
-      endpoint: '/api/chat',
-      googleModel: 'gemini-2.5-pro'
-    },
+  // Model definitions with provider routing
+  const models = {
+    // Text model - Google REST API
     'gemini-2.5-flash': {
+      id: 'gemini-2.5-flash',
+      name: 'Gemini 2.5 Flash',
       type: 'text',
+      provider: 'google-text',
       endpoint: '/api/chat',
       googleModel: 'gemini-2.5-flash'
     },
-    'gemini-2.5-flash-lite': {
-      type: 'text',
-      endpoint: '/api/chat',
-      googleModel: 'gemini-2.5-flash-lite'
-    },
-    'gemini-1.5-pro': {
-      type: 'text',
-      endpoint: '/api/chat',
-      googleModel: 'gemini-1.5-pro'
-    },
-    'gemini-1.5-flash': {
-      type: 'text',
-      endpoint: '/api/chat',
-      googleModel: 'gemini-1.5-flash'
-    }
-  };
-
-  // IMAGE GENERATION MODELS
-  // Only 3 models supported
-  const imageModels = {
-    'gemini-2.5-flash-image': {
-      type: 'image',
-      endpoint: '/api/generateImage',
-      googleModel: 'gemini-2.5-flash-image',
-      provider: 'gemini-image' // Uses generateContent with responseModalities: ["IMAGE"]
-    },
-    'gemini-2.5-flash-image-multimodal': {
-      type: 'image',
-      endpoint: '/api/generateImage',
-      googleModel: 'gemini-2.5-flash-image-multimodal',
-      provider: 'gemini-multimodal' // Uses generateContent with responseModalities: ["TEXT","IMAGE"]
-    },
+    
+    // Image model - Vertex AI Imagen
     'imagen-4': {
+      id: 'imagen-4',
+      name: 'Imagen 4',
       type: 'image',
+      provider: 'vertex-imagen',
       endpoint: '/api/generateImage',
-      googleModel: 'imagen-4',
-      provider: 'imagen' // Uses generateImage endpoint
-    }
-  };
-
-  // VISION INPUT MODELS
-  const visionModels = {
-    'gemini-2.5-pro-vision': {
-      type: 'vision',
-      endpoint: '/api/generateVision',
-      googleModel: 'gemini-2.5-pro-vision'
+      googleModel: 'imagen-4.0-generate-001'
     },
-    'gemini-1.5-pro-vision': {
-      type: 'vision',
-      endpoint: '/api/generateVision',
-      googleModel: 'gemini-1.5-pro-vision'
+    
+    // Image model - Vertex AI Gemini streaming
+    'gemini-2.5-flash-image': {
+      id: 'gemini-2.5-flash-image',
+      name: 'Nanobanana',
+      type: 'image',
+      provider: 'vertex-gemini-image',
+      endpoint: '/api/nanobananaImage',
+      googleModel: 'gemini-2.5-flash-image'
     }
   };
 
-  // AUDIO MODELS
-  const audioModels = {
-    'gemini-2.5-flash-audio': {
-      type: 'audio',
-      endpoint: '/api/generateAudio',
-      googleModel: 'gemini-2.5-flash-audio'
-    },
-    'gemini-1.5-flash-audio': {
-      type: 'audio',
-      endpoint: '/api/generateAudio',
-      googleModel: 'gemini-1.5-flash-audio'
-    }
-  };
-
-  // Check all model maps
-  if (textModels[normalizedModel]) {
-    return textModels[normalizedModel];
-  }
+  const config = models[normalizedModel];
   
-  if (imageModels[normalizedModel]) {
-    return imageModels[normalizedModel];
-  }
-  
-  if (visionModels[normalizedModel]) {
-    return visionModels[normalizedModel];
-  }
-  
-  if (audioModels[normalizedModel]) {
-    return audioModels[normalizedModel];
+  if (!config) {
+    console.warn(`[ModelRouter] Unknown model "${modelName}", defaulting to gemini-2.5-flash`);
+    return models['gemini-2.5-flash'];
   }
 
-  // Default fallback to text model
-  console.warn(`[ModelRouter] Unknown model "${modelName}", defaulting to gemini-2.5-flash`);
   return {
-    type: 'text',
-    endpoint: '/api/chat',
-    googleModel: 'gemini-2.5-flash'
+    endpoint: config.endpoint,
+    type: config.type,
+    provider: config.provider,
+    modelId: config.id,
+    googleModel: config.googleModel
   };
 }
 
@@ -136,20 +79,3 @@ export function isImageModel(modelName) {
   const config = resolveModelConfig(modelName);
   return config.type === 'image';
 }
-
-/**
- * Check if model is a vision model
- */
-export function isVisionModel(modelName) {
-  const config = resolveModelConfig(modelName);
-  return config.type === 'vision';
-}
-
-/**
- * Check if model is an audio model
- */
-export function isAudioModel(modelName) {
-  const config = resolveModelConfig(modelName);
-  return config.type === 'audio';
-}
-

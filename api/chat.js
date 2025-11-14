@@ -110,8 +110,8 @@ const getAccessToken = async () => {
 };
 
 /**
- * Call Google Gemini API
- * Uses v1 API for gemini-2.5-flash
+ * Call Google Gemini API (REST API v1)
+ * ONLY for gemini-2.5-flash (text model)
  */
 const callGeminiAPI = async (model, message) => {
   const accessToken = await getAccessToken();
@@ -129,12 +129,7 @@ const callGeminiAPI = async (model, message) => {
         role: 'user',
         parts: [{ text: message }]
       }
-    ],
-    generationConfig: {
-      temperature: 0.7,
-      topP: 0.9,
-      maxOutputTokens: 2048,
-    },
+    ]
   };
 
   const response = await fetch(endpoint, {
@@ -197,21 +192,12 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing or invalid "message" field' });
     }
 
-    // Use gemini-2.5-flash as default
+    // ONLY allow gemini-2.5-flash (text model)
     const model = requestedModel || "gemini-2.5-flash";
     
-    // Validate that model is a text model (not image/vision/audio)
-    const textModels = [
-      'gemini-2.5-pro',
-      'gemini-2.5-flash',
-      'gemini-2.5-flash-lite',
-      'gemini-1.5-pro',
-      'gemini-1.5-flash'
-    ];
-    
-    if (!textModels.includes(model.toLowerCase())) {
+    if (model.toLowerCase() !== 'gemini-2.5-flash') {
       return res.status(400).json({ 
-        error: `Wrong endpoint: model "${model}" is not a text model. Use /api/generateImage, /api/generateVision, or /api/generateAudio instead.` 
+        error: `Wrong endpoint: model "${model}" is not supported. This endpoint only accepts "gemini-2.5-flash" (text model). Use /api/generateImage for Imagen 4 or /api/nanobananaImage for Nanobanana.` 
       });
     }
 

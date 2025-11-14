@@ -110,31 +110,72 @@ const getAccessToken = async () => {
 };
 
 /**
- * Call Vertex AI Imagen API
- * ONLY for imagen-4
+ * Robust function to extract base64 image from streaming response
+ * Tries multiple possible response formats
  */
-const callImagenAPI = async (prompt) => {
+function extractImageBase64(chunk) {
+  try {
+    // Try inlineData.data (camelCase)
+    const inlineData = chunk?.candidates?.[0]?.content?.parts?.find(
+      p => p.inlineData?.data
+    );
+    if (inlineData) {
+      console.log("[API] Extracted image from inlineData.data");
+      return inlineData.inlineData.data;
+    }
+
+    // Try inline_data.data (snake_case)
+    const inline_data = chunk?.candidates?.[0]?.content?.parts?.find(
+      p => p.inline_data?.data
+    );
+    if (inline_data) {
+      console.log("[API] Extracted image from inline_data.data");
+      return inline_data.inline_data.data;
+    }
+
+    // Try media.data
+    const media = chunk?.candidates?.[0]?.content?.parts?.find(
+      p => p.media?.data
+    );
+    if (media) {
+      console.log("[API] Extracted image from media.data");
+      return media.media.data;
+    }
+
+    console.error("[API] Could not find image in chunk");
+    return null;
+  } catch (e) {
+    console.error("[extractImageBase64] ERROR:", e);
+    return null;
+  }
+}
+
+/**
+ * Call Vertex AI Gemini streaming API
+ * ONLY for gemini-2.5-flash-image (Nanobanana)
+ */
+const callNanobananaAPI = async (prompt) => {
   const accessToken = await getAccessToken();
   const projectId = 'eataly-creative-ai-suite';
   const location = 'us-central1';
-  const model = 'imagen-4.0-generate-001';
+  const model = 'gemini-2.5-flash-image';
   
-  const endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:predict`;
+  const endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:streamGenerateContent`;
   
   console.log("[API] ========================================");
-  console.log("[API] IMAGEN 4 IMAGE GENERATION REQUEST");
+  console.log("[API] NANOBANANA IMAGE GENERATION REQUEST");
   console.log("[API] Endpoint:", endpoint);
   console.log("[API] Prompt:", prompt);
 
   const requestBody = {
-    instances: [
+    contents: [
       {
-        prompt: prompt
+        role: 'user',
+        parts: [
+          { text: prompt }
+        ]
       }
-    ],
-    parameters: {
-      sampleCount: 1
-    }
+    ]
   };
 
   console.log("[API] Request Body:", JSON.stringify(requestBody, null, 2));
@@ -151,49 +192,78 @@ const callImagenAPI = async (prompt) => {
   if (!response.ok) {
     const errorText = await response.text();
     console.error("[API] ========================================");
-    console.error("[API] IMAGEN API ERROR");
+    console.error("[API] NANOBANANA API ERROR");
     console.error("[API] Status:", response.status);
     console.error("[API] Status Text:", response.statusText);
     console.error("[API] Raw Error Response:", errorText);
     console.error("[API] ========================================");
-    throw new Error(`Imagen API error: ${response.status} ${errorText}`);
+    throw new Error(`Nanobanana API error: ${response.status} ${errorText}`);
   }
 
-  const data = await response.json();
-  console.log("[API] Imagen response received");
-  console.log("[API] Response keys:", Object.keys(data));
-  
-  // Log raw response for debugging
-  console.log("[API] ========================================");
-  console.log("[API] RAW RESPONSE (full):");
-  console.log(JSON.stringify(data, null, 2));
-  console.log("[API] ========================================");
-  
-  // Extract base64 image from response
-  // Try multiple possible response formats
+  // Read streaming response
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
   let imageBase64 = null;
-  
-  if (data.predictions?.[0]?.bytesBase64Encoded) {
-    imageBase64 = data.predictions[0].bytesBase64Encoded;
-    console.log("[API] Extracted image from predictions[0].bytesBase64Encoded");
-  } else if (data.predictions?.[0]?.generatedImages?.[0]) {
-    imageBase64 = data.predictions[0].generatedImages[0];
-    console.log("[API] Extracted image from predictions[0].generatedImages[0]");
-  } else if (data.predictions?.[0]?.imageBytes) {
-    imageBase64 = data.predictions[0].imageBytes;
-    console.log("[API] Extracted image from predictions[0].imageBytes");
-  } else {
-    console.error("[API] Imagen response structure:", JSON.stringify(data, null, 2));
-    throw new Error('Imagen response missing image data');
+  let buffer = '';
+
+  console.log("[API] Reading streaming response...");
+
+  while (true) {
+    const { done, value } = await reader.read();
+    
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    
+    // Process complete JSON objects in buffer
+    let newlineIndex;
+    while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, newlineIndex).trim();
+      buffer = buffer.slice(newlineIndex + 1);
+
+      if (!line) continue;
+
+      try {
+        const chunk = JSON.parse(line);
+        console.log("[API] Received chunk:", Object.keys(chunk));
+        
+        // Try to extract image from this chunk
+        const extracted = extractImageBase64(chunk);
+        if (extracted) {
+          imageBase64 = extracted;
+          console.log("[API] Image found in stream chunk");
+          // Continue reading to ensure we get all chunks, but we already have the image
+        }
+      } catch (e) {
+        console.warn("[API] Failed to parse chunk:", e.message);
+      }
+    }
   }
-  
+
+  // Process remaining buffer
+  if (buffer.trim()) {
+    try {
+      const chunk = JSON.parse(buffer.trim());
+      const extracted = extractImageBase64(chunk);
+      if (extracted) {
+        imageBase64 = extracted;
+        console.log("[API] Image found in final buffer");
+      }
+    } catch (e) {
+      console.warn("[API] Failed to parse final buffer:", e.message);
+    }
+  }
+
   if (!imageBase64) {
-    throw new Error('No image data found in Imagen API response');
+    console.error("[API] No image data found in streaming response");
+    throw new Error('No image data found in Nanobanana API streaming response');
   }
-  
+
   console.log("[API] Image extracted successfully, length:", imageBase64.length);
   console.log("[API] ========================================");
-  
+
   return imageBase64;
 };
 
@@ -225,7 +295,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    console.log('[API] Incoming image generation request', {
+    console.log('[API] Incoming Nanobanana image generation request', {
       method: req.method,
       origin: req.headers.origin,
       url: req.url
@@ -238,18 +308,18 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing or invalid "prompt" field' });
     }
 
-    // ONLY allow imagen-4
-    const modelToUse = model || "imagen-4";
+    // ONLY allow gemini-2.5-flash-image
+    const modelToUse = model || "gemini-2.5-flash-image";
     
-    if (modelToUse.toLowerCase() !== 'imagen-4') {
+    if (modelToUse.toLowerCase() !== 'gemini-2.5-flash-image') {
       return res.status(400).json({ 
-        error: `Wrong endpoint: model "${modelToUse}" is not supported. This endpoint only accepts "imagen-4". Use /api/chat for Gemini 2.5 Flash or /api/nanobananaImage for Nanobanana.` 
+        error: `Wrong endpoint: model "${modelToUse}" is not supported. This endpoint only accepts "gemini-2.5-flash-image" (Nanobanana). Use /api/chat for Gemini 2.5 Flash or /api/generateImage for Imagen 4.` 
       });
     }
 
-    // Generate image via Vertex AI
-    console.log('[API] Calling Imagen API:', { prompt, model: modelToUse });
-    const imageBase64 = await callImagenAPI(prompt);
+    // Generate image via Vertex AI streaming
+    console.log('[API] Calling Nanobanana API:', { prompt, model: modelToUse });
+    const imageBase64 = await callNanobananaAPI(prompt);
 
     if (!imageBase64) {
       return res.status(500).json({ error: 'Failed to generate image' });
@@ -267,3 +337,4 @@ export default async function handler(req, res) {
     });
   }
 }
+
