@@ -24,15 +24,16 @@ const ChatSidebar = () => {
   const {
     chats,
     activeChatId,
+    currentChatId,
     loading,
     firestoreError,
     loadChatsFromFirestore,
-    createNewChat,
+    createChat,
+    selectChat,
     renameChat,
     deleteChat,
-    togglePin,
-    reorderChats,
-    setActiveChat,
+    pinChat,
+    reorderChat,
   } = useChatStore();
 
   const [editingChatId, setEditingChatId] = useState(null);
@@ -65,14 +66,15 @@ const ChatSidebar = () => {
 
   // Auto-select first chat if none selected
   useEffect(() => {
-    if (!activeChatId && chats.length > 0) {
-      setActiveChat(chats[0].id);
+    const chatIdToUse = currentChatId || activeChatId;
+    if (!chatIdToUse && chats.length > 0) {
+      selectChat(chats[0].id);
     }
-  }, [chats, activeChatId, setActiveChat]);
+  }, [chats, currentChatId, activeChatId, selectChat]);
 
   const handleCreateNewChat = async () => {
     try {
-      await createNewChat();
+      await createChat();
       setMenuOpenId(null);
     } catch (error) {
       console.error('Error creating chat:', error);
@@ -105,7 +107,7 @@ const ChatSidebar = () => {
 
   const handleTogglePin = async (chatId) => {
     try {
-      await togglePin(chatId);
+      await pinChat(chatId);
     } catch (error) {
       console.error('Error toggling pin:', error);
       alert(error.message || 'Errore durante il pin/unpin');
@@ -114,30 +116,24 @@ const ChatSidebar = () => {
   };
 
   const handleMoveUp = async (chatId) => {
-    const unpinnedChats = chats.filter(c => !c.pinned);
-    const currentIndex = unpinnedChats.findIndex(c => c.id === chatId);
-    if (currentIndex > 0) {
-      const newOrder = [...unpinnedChats];
-      [newOrder[currentIndex], newOrder[currentIndex - 1]] = [newOrder[currentIndex - 1], newOrder[currentIndex]];
-      const newOrderIds = newOrder.map(c => c.id);
-      await reorderChats(newOrderIds);
+    try {
+      await reorderChat(chatId, 'up');
+    } catch (error) {
+      console.error('Error moving chat up:', error);
     }
     setMenuOpenId(null);
   };
 
   const handleMoveDown = async (chatId) => {
-    const unpinnedChats = chats.filter(c => !c.pinned);
-    const currentIndex = unpinnedChats.findIndex(c => c.id === chatId);
-    if (currentIndex < unpinnedChats.length - 1) {
-      const newOrder = [...unpinnedChats];
-      [newOrder[currentIndex], newOrder[currentIndex + 1]] = [newOrder[currentIndex + 1], newOrder[currentIndex]];
-      const newOrderIds = newOrder.map(c => c.id);
-      await reorderChats(newOrderIds);
+    try {
+      await reorderChat(chatId, 'down');
+    } catch (error) {
+      console.error('Error moving chat down:', error);
     }
     setMenuOpenId(null);
   };
 
-  const handleDragEnd = (event) => {
+  const handleDragEnd = async (event) => {
     const { active, over } = event;
 
     if (!over || active.id === over.id) {
@@ -158,7 +154,10 @@ const ChatSidebar = () => {
 
     const newOrder = arrayMove(unpinnedChats, oldIndex, newIndex);
     const newOrderIds = newOrder.map(c => c.id);
-    reorderChats(newOrderIds);
+    
+    // Use reorderChats from store (it's still available)
+    const { reorderChats } = useChatStore.getState();
+    await reorderChats(newOrderIds);
   };
 
   const pinnedChats = chats.filter(c => c.pinned);
@@ -195,12 +194,14 @@ const ChatSidebar = () => {
               Fissate
             </div>
             <div className="space-y-1 px-2">
-              {pinnedChats.map((chat) => (
-                <ChatItem
-                  key={chat.id}
-                  chat={chat}
-                  isActive={chat.id === activeChatId}
-                  onSelect={() => setActiveChat(chat.id)}
+              {pinnedChats.map((chat) => {
+                const chatIdToUse = currentChatId || activeChatId;
+                return (
+                  <ChatItem
+                    key={chat.id}
+                    chat={chat}
+                    isActive={chat.id === chatIdToUse}
+                    onSelect={() => selectChat(chat.id)}
                   onRename={(title) => {
                     setEditingChatId(chat.id);
                     setEditTitle(title);
@@ -216,11 +217,16 @@ const ChatSidebar = () => {
                     setEditTitle('');
                   }}
                   menuOpen={menuOpenId === chat.id}
-                  onMenuToggle={() => setMenuOpenId(menuOpenId === chat.id ? null : chat.id)}
+                  onMenuToggle={() => {
+                    const newMenuId = menuOpenId === chat.id ? null : chat.id;
+                    console.log('OPEN MENU →', newMenuId);
+                    setMenuOpenId(newMenuId);
+                  }}
                   isPinned={true}
                   canMove={false}
-                />
-              ))}
+                  />
+                );
+              })}
             </div>
             <div className="h-px bg-gray-800 mx-4 my-2" />
           </>
@@ -240,12 +246,14 @@ const ChatSidebar = () => {
             strategy={verticalListSortingStrategy}
           >
             <div className="space-y-1 px-2">
-              {unpinnedChats.map((chat) => (
-                <SortableChatItem
-                  key={chat.id}
-                  chat={chat}
-                  isActive={chat.id === activeChatId}
-                  onSelect={() => setActiveChat(chat.id)}
+              {unpinnedChats.map((chat) => {
+                const chatIdToUse = currentChatId || activeChatId;
+                return (
+                  <SortableChatItem
+                    key={chat.id}
+                    chat={chat}
+                    isActive={chat.id === chatIdToUse}
+                    onSelect={() => selectChat(chat.id)}
                   onRename={(title) => {
                     setEditingChatId(chat.id);
                     setEditTitle(title);
@@ -266,8 +274,9 @@ const ChatSidebar = () => {
                   onMenuToggle={() => setMenuOpenId(menuOpenId === chat.id ? null : chat.id)}
                   isPinned={false}
                   canMove={true}
-                />
-              ))}
+                  />
+                );
+              })}
             </div>
           </SortableContext>
         </DndContext>
@@ -375,6 +384,7 @@ const ChatItem = ({
           <span className="flex-1 truncate text-sm">{chat.title}</span>
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 onMenuToggle();
@@ -396,6 +406,7 @@ const ChatItem = ({
           onClick={(e) => e.stopPropagation()}
         >
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               onRename(chat.title);
@@ -409,6 +420,7 @@ const ChatItem = ({
             Rinomina
           </button>
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               onTogglePin();
@@ -423,6 +435,7 @@ const ChatItem = ({
           {canMove && (
             <>
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   onMoveUp();
@@ -435,6 +448,7 @@ const ChatItem = ({
                 Sposta su
               </button>
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   onMoveDown();
@@ -450,6 +464,7 @@ const ChatItem = ({
           )}
           <div className="h-px bg-gray-700 my-1" />
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               onDelete();

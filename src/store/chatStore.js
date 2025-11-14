@@ -80,6 +80,7 @@ export const useChatStore = create((set, get) => ({
   messages: [],
   sessionId: getSessionId(), // Legacy support
   activeChatId: null, // Current active chat ID
+  currentChatId: null, // Alias for activeChatId (exposed for compatibility)
   chats: [], // List of all chats
   firestoreError: null,
   unsubscribe: null,
@@ -188,6 +189,7 @@ export const useChatStore = create((set, get) => ({
       set(state => ({
         chats: [...state.chats, newChat],
         activeChatId: docRef.id,
+        currentChatId: docRef.id, // Update alias
         sessionId: docRef.id // Update sessionId for backward compatibility
       }));
 
@@ -214,7 +216,7 @@ export const useChatStore = create((set, get) => ({
     const userId = getUserId();
     
     try {
-      console.log('[Store] Renaming chat:', chatId, 'to:', newTitle);
+      console.log('RENAME →', chatId, '→', newTitle);
       
       const chatRef = doc(db, 'users', userId, 'chats', chatId);
       await updateDoc(chatRef, {
@@ -246,7 +248,7 @@ export const useChatStore = create((set, get) => ({
     const userId = getUserId();
     
     try {
-      console.log('[Store] Deleting chat:', chatId);
+      console.log('DELETE →', chatId);
       
       // Delete all messages first
       const messagesRef = getMessagesRef(chatId);
@@ -283,6 +285,7 @@ export const useChatStore = create((set, get) => ({
       set(state => ({
         chats: state.chats.filter(chat => chat.id !== chatId),
         activeChatId: newActiveChatId,
+        currentChatId: newActiveChatId, // Update alias
         sessionId: newActiveChatId || state.sessionId,
         messages: newActiveChatId === chatId ? [] : state.messages
       }));
@@ -402,6 +405,7 @@ export const useChatStore = create((set, get) => ({
       
       set({ 
         activeChatId: chatId,
+        currentChatId: chatId, // Update alias
         sessionId: chatId, // Update sessionId for backward compatibility
         messages: [] // Clear messages, will be loaded
       });
@@ -418,6 +422,60 @@ export const useChatStore = create((set, get) => ({
       set({ firestoreError: error.message });
       throw error;
     }
+  },
+
+  /**
+   * Select chat (alias for setActiveChat with debug log)
+   */
+  selectChat: async (chatId) => {
+    console.log('SELECT CHAT →', chatId);
+    await get().setActiveChat(chatId);
+  },
+
+  /**
+   * Create chat (alias for createNewChat)
+   */
+  createChat: async () => {
+    console.log('CREATE CHAT');
+    return await get().createNewChat();
+  },
+
+  /**
+   * Pin chat (alias for togglePin with debug log)
+   */
+  pinChat: async (chatId) => {
+    console.log('PIN/UNPIN →', chatId);
+    await get().togglePin(chatId);
+  },
+
+  /**
+   * Reorder chat (move up or down)
+   */
+  reorderChat: async (chatId, direction) => {
+    const { chats } = get();
+    const unpinnedChats = chats.filter(c => !c.pinned);
+    const currentIndex = unpinnedChats.findIndex(c => c.id === chatId);
+    
+    if (currentIndex === -1) {
+      console.warn('[Store] Chat not found or is pinned:', chatId);
+      return;
+    }
+
+    let newIndex;
+    if (direction === 'up' && currentIndex > 0) {
+      newIndex = currentIndex - 1;
+    } else if (direction === 'down' && currentIndex < unpinnedChats.length - 1) {
+      newIndex = currentIndex + 1;
+    } else {
+      return; // Can't move further
+    }
+
+    const newOrder = [...unpinnedChats];
+    [newOrder[currentIndex], newOrder[newIndex]] = [newOrder[newIndex], newOrder[currentIndex]];
+    const newOrderIds = newOrder.map(c => c.id);
+    
+    console.log('REORDER CHAT →', chatId, direction);
+    await get().reorderChats(newOrderIds);
   },
 
   /**
@@ -1018,13 +1076,14 @@ export const useChatStore = create((set, get) => ({
     // Create new chat
     const newChatId = await get().createNewChat();
     
-    set({ 
-      messages: [], 
-      sessionId: newChatId,
-      activeChatId: newChatId,
-      unsubscribe: null,
-      firestoreError: null
-    });
+      set({ 
+        messages: [], 
+        sessionId: newChatId,
+        activeChatId: newChatId,
+        currentChatId: newChatId, // Update alias
+        unsubscribe: null,
+        firestoreError: null
+      });
     
     console.log('[Store] New chat created:', newChatId);
   }
