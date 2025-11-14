@@ -45,31 +45,55 @@ export function resolveModelConfig(modelName) {
   };
 
   // IMAGE GENERATION MODELS
+  // These models use generateImage endpoint (NOT generateContent)
   const imageModels = {
-    'gemini-2.5-flash-image': {
+    'imagen-3': {
       type: 'image',
       endpoint: '/api/generateImage',
-      googleModel: 'gemini-2.5-flash-image'
+      googleModel: 'imagen-3',
+      imageType: 'imagen' // For payload format
+    },
+    'imagen-3-fast': {
+      type: 'image',
+      endpoint: '/api/generateImage',
+      googleModel: 'imagen-3-fast',
+      imageType: 'imagen'
+    },
+    'imagen-3-ultra': {
+      type: 'image',
+      endpoint: '/api/generateImage',
+      googleModel: 'imagen-3-ultra',
+      imageType: 'imagen'
     },
     'imagen-4': {
       type: 'image',
       endpoint: '/api/generateImage',
-      googleModel: 'imagen-4'
+      googleModel: 'imagen-4',
+      imageType: 'imagen'
     },
     'imagen-4-ultra': {
       type: 'image',
       endpoint: '/api/generateImage',
-      googleModel: 'imagen-4-ultra'
+      googleModel: 'imagen-4-ultra',
+      imageType: 'imagen'
     },
     'imagen-4-fast': {
       type: 'image',
       endpoint: '/api/generateImage',
-      googleModel: 'imagen-4-fast'
+      googleModel: 'imagen-4-fast',
+      imageType: 'imagen'
     },
-    'imagen-3': {
+    'gemini-2.5-flash-image': {
       type: 'image',
       endpoint: '/api/generateImage',
-      googleModel: 'imagen-3'
+      googleModel: 'gemini-2.5-flash-image',
+      imageType: 'gemini' // For payload format
+    },
+    'gemini-1.5-pro-image': {
+      type: 'image',
+      endpoint: '/api/generateImage',
+      googleModel: 'gemini-1.5-pro-image',
+      imageType: 'gemini'
     }
   };
 

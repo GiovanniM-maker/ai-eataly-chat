@@ -448,13 +448,18 @@ export const useChatStore = create((set, get) => ({
   generateImage: async (prompt, model = null) => {
     const { selectedModel } = get();
     const modelToUse = model || selectedModel;
+    const config = resolveModelConfig(modelToUse);
     const tempMessageId = `temp-${Date.now()}`;
     
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || '/api/generateImage';
+      const apiUrl = import.meta.env.VITE_API_URL || config.endpoint;
+      
+      // Determine image type for payload format
+      const imageType = config.imageType || (modelToUse.startsWith('imagen-') ? 'imagen' : 'gemini');
       
       console.log('[Store] Calling image generation API:', apiUrl);
-      console.log('[Store] Request body:', { prompt, model: modelToUse });
+      console.log('[Store] Model config:', config);
+      console.log('[Store] Request body:', { prompt, model: config.googleModel, imageType });
 
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -463,8 +468,8 @@ export const useChatStore = create((set, get) => ({
         },
         body: JSON.stringify({
           prompt: prompt,
-          model: modelToUse,
-          size: "512x512"
+          model: config.googleModel,
+          imageType: imageType
         }),
       });
 
@@ -481,6 +486,13 @@ export const useChatStore = create((set, get) => ({
 
       const data = await response.json();
       console.log('[Store] Image generation response received');
+      
+      // Extract imageBase64 from response (support both 'image' and 'imageBase64' fields)
+      const imageBase64 = data.image || data.imageBase64;
+      
+      if (!imageBase64) {
+        throw new Error('No image data in API response');
+      }
 
       // Add assistant message with base64 image (temporary)
       const assistantMessage = {
@@ -490,7 +502,7 @@ export const useChatStore = create((set, get) => ({
         sender: 'assistant',
         content: '',
         model: modelToUse,
-        imageBase64: data.imageBase64, // Temporary, will be replaced with URL
+        imageBase64: imageBase64, // Temporary, will be replaced with URL
         timestamp: Date.now()
       };
 
