@@ -85,18 +85,12 @@ export const useChatStore = create((set, get) => ({
         const data = doc.data();
         
         // Handle different message types
+        // NOTE: Images are NOT loaded from Firestore (cache-only mode)
+        // Only text messages are persisted
         if (data.type === 'image') {
-          loadedMessages.push({
-            id: doc.id,
-            type: 'image',
-            base64: data.base64 || null, // Load base64 from Firestore
-            role: data.sender === 'user' ? 'user' : 'assistant',
-            sender: data.sender,
-            messageType: 'image',
-            timestamp: data.createdAt?.toMillis?.() || data.createdAt?.seconds * 1000 || Date.now(),
-            model: data.model || DEFAULT_MODEL
-          });
-          console.log('[Store] Loaded image message from Firestore, base64 length:', data.base64 ? data.base64.length : 0);
+          // Skip image messages - they are cache-only
+          console.log('[Store] Skipping image message from Firestore (cache-only mode)');
+          return;
         } else if (data.type === 'vision') {
           loadedMessages.push({
             id: doc.id,
@@ -176,19 +170,12 @@ export const useChatStore = create((set, get) => ({
               const data = change.doc.data();
               
               // Handle different message types
+              // NOTE: Images are NOT loaded from Firestore (cache-only mode)
               let newMessage;
               if (data.type === 'image') {
-                newMessage = {
-                  id: change.doc.id,
-                  type: 'image',
-                  base64: data.base64 || null, // Load base64 from Firestore
-                  role: data.sender === 'user' ? 'user' : 'assistant',
-                  sender: data.sender,
-                  messageType: 'image',
-                  timestamp: data.createdAt?.toMillis?.() || data.createdAt?.seconds * 1000 || Date.now(),
-                  model: data.model || DEFAULT_MODEL
-                };
-                console.log('[Store] Realtime update: image message, base64 length:', data.base64 ? data.base64.length : 0);
+                // Skip image messages - they are cache-only
+                console.log('[Store] Skipping image message from realtime update (cache-only mode)');
+                return;
               } else if (data.type === 'vision') {
                 newMessage = {
                   id: change.doc.id,
@@ -267,62 +254,51 @@ export const useChatStore = create((set, get) => ({
   },
 
   /**
-   * Save message to Firestore
-   * Supports multiple message types: text, image
+   * Save message to Firestore (TEXT ONLY - images are NOT persisted)
+   * Images are stored only in local cache (Zustand state)
    */
-  saveMessageToFirestore: async (role, text, model = DEFAULT_MODEL, imageBase64 = null, messageType = null) => {
+  saveMessageWithoutImageToFirestore: async (role, text, model = DEFAULT_MODEL) => {
     const { sessionId } = get();
     
     try {
       const messagesRef = getMessagesRef(sessionId);
       
-      // Determine message type
-      let finalType = messageType;
-      if (!finalType && imageBase64) {
-        finalType = 'image';
-      } else if (!finalType) {
-        finalType = 'text';
-      }
-      
-      // Build message data based on type
-      let messageData = {
+      // Build message data for text messages only
+      const messageData = {
+        role: role,
         sender: role === 'user' ? 'user' : 'assistant',
+        text: text || null,
         model,
         createdAt: serverTimestamp()
       };
-      
-      if (finalType === 'image') {
-        messageData.type = 'image';
-        // Store base64 as data URL: "data:image/png;base64,..."
-        messageData.base64 = imageBase64 || null;
-        console.log('[Store] Saving image message to Firestore with base64, length:', imageBase64 ? imageBase64.length : 0);
-      } else {
-        // Text message
-        messageData.role = role;
-        messageData.text = text || null;
-      }
 
       const docRef = await addDoc(messagesRef, messageData);
-      console.log('[Store] Message saved to Firestore successfully');
+      console.log('[Store] Text message saved to Firestore successfully');
       console.log('[Store] Document ID:', docRef.id);
-      console.log('[Store] Message type:', finalType);
-      if (finalType === 'image') {
-        console.log('[Store] Base64 length saved:', messageData.base64 ? messageData.base64.length : 0);
-      }
       return docRef.id;
     } catch (error) {
-      console.error('[Store] Error saving message to Firestore:', error);
+      console.error('[Store] Error saving text message to Firestore:', error);
       set({ firestoreError: error.message });
       throw error;
     }
   },
 
   /**
+   * Save image to Firebase Storage (STUB - to be implemented tomorrow)
+   * For now, images are stored only in local cache
+   */
+  saveImageToStorage: async (imageBase64, messageId) => {
+    // TODO: Implement Firebase Storage upload tomorrow
+    console.log('[Store] saveImageToStorage() called but not implemented yet');
+    console.log('[Store] Image saved in local cache (NOT persisted).');
+    return null;
+  },
+
+  /**
    * Send image message (user uploads image)
-   * Converts file to base64 and saves to Firestore
+   * Converts file to base64 and stores ONLY in local cache (NOT persisted)
    */
   sendImageMessage: async (file) => {
-    const { sessionId, selectedModel } = get();
     const tempMessageId = `temp-${Date.now()}`;
     
     try {
@@ -339,7 +315,7 @@ export const useChatStore = create((set, get) => ({
       
       console.log('[Store] Image converted to base64, length:', base64DataUrl.length, 'characters');
       
-      // Add user message with base64 immediately to UI
+      // Add user message with base64 immediately to UI (local cache only)
       const userMessage = {
         id: tempMessageId,
         type: 'image',
@@ -354,21 +330,8 @@ export const useChatStore = create((set, get) => ({
       }));
 
       console.log('[Store] Image message added to UI, rendering from base64');
+      console.log('[Store] Image saved in local cache (NOT persisted).');
 
-      // Save to Firestore with base64 (data URL format)
-      try {
-        await get().saveMessageToFirestore('user', null, selectedModel, base64DataUrl, 'image');
-        console.log('[Store] User image message saved to Firestore successfully with base64');
-      } catch (firestoreError) {
-        console.warn('[Store] Firestore save failed for image message:', firestoreError);
-        // Remove message from UI if Firestore save fails
-        set(state => ({
-          messages: state.messages.filter(msg => msg.id !== tempMessageId)
-        }));
-        throw new Error('Failed to save image message to Firestore');
-      }
-
-      console.log('[Store] Image message saved successfully (base64 only, no external upload)');
       return true;
     } catch (error) {
       console.error('[Store] Error sending image message:', error);
@@ -438,7 +401,7 @@ export const useChatStore = create((set, get) => ({
       console.log('[Store] Image extracted from API response');
       console.log('[Store] Final base64 length:', imageBase64.length, 'characters');
 
-      // Add assistant message with base64 image
+      // Add assistant message with base64 image (local cache only)
       const assistantMessage = {
         id: tempMessageId,
         type: 'image',
@@ -454,21 +417,8 @@ export const useChatStore = create((set, get) => ({
       }));
 
       console.log('[Store] Image message added to UI, rendering from base64');
+      console.log('[Store] Image saved in local cache (NOT persisted).');
 
-      // Save to Firestore with base64 (data URL format)
-      try {
-        await get().saveMessageToFirestore('assistant', '', modelToUse, imageDataUrl, 'image');
-        console.log('[Store] Image message saved to Firestore successfully with base64');
-      } catch (firestoreError) {
-        console.warn('[Store] Firestore save failed for generated image:', firestoreError);
-        // Remove message from UI if Firestore save fails
-        set(state => ({
-          messages: state.messages.filter(msg => msg.id !== tempMessageId)
-        }));
-        throw new Error('Failed to save generated image to Firestore');
-      }
-
-      console.log('[Store] Generated image saved successfully (base64 only, no external upload)');
       return imageDataUrl;
     } catch (error) {
       console.error('[Store] Error generating image:', error);
@@ -538,7 +488,7 @@ export const useChatStore = create((set, get) => ({
       console.log('[Store] Image extracted from API response');
       console.log('[Store] Final base64 length:', imageBase64.length, 'characters');
 
-      // Add assistant message with base64 image
+      // Add assistant message with base64 image (local cache only)
       const assistantMessage = {
         id: tempMessageId,
         type: 'image',
@@ -554,21 +504,8 @@ export const useChatStore = create((set, get) => ({
       }));
 
       console.log('[Store] Image message added to UI, rendering from base64');
+      console.log('[Store] Image saved in local cache (NOT persisted).');
 
-      // Save to Firestore with base64 (data URL format)
-      try {
-        await get().saveMessageToFirestore('assistant', '', modelToUse, imageDataUrl, 'image');
-        console.log('[Store] Image message saved to Firestore successfully with base64');
-      } catch (firestoreError) {
-        console.warn('[Store] Firestore save failed for generated image:', firestoreError);
-        // Remove message from UI if Firestore save fails
-        set(state => ({
-          messages: state.messages.filter(msg => msg.id !== tempMessageId)
-        }));
-        throw new Error('Failed to save generated image to Firestore');
-      }
-
-      console.log('[Store] Generated image saved successfully (base64 only, no external upload)');
       return imageDataUrl;
     } catch (error) {
       console.error('[Store] Error generating Nanobanana image:', error);
@@ -605,11 +542,13 @@ export const useChatStore = create((set, get) => ({
         messages: [...state.messages, userMessage]
       }));
 
-      // Save user message to Firestore
-      try {
-        await get().saveMessageToFirestore('user', message, selectedModel, null, config.type);
-      } catch (firestoreError) {
-        console.warn('[Store] Firestore save failed for user message, continuing with API call:', firestoreError);
+      // Save user message to Firestore (TEXT ONLY - images are not persisted)
+      if (config.type !== 'image') {
+        try {
+          await get().saveMessageWithoutImageToFirestore('user', message, selectedModel);
+        } catch (firestoreError) {
+          console.warn('[Store] Firestore save failed for user message, continuing with API call:', firestoreError);
+        }
       }
 
       // Route to appropriate handler based on model provider
@@ -669,9 +608,9 @@ export const useChatStore = create((set, get) => ({
           messages: [...state.messages, assistantMessage]
         }));
 
-        // Save assistant message to Firestore
+        // Save assistant message to Firestore (TEXT ONLY)
         try {
-          await get().saveMessageToFirestore('assistant', data.reply || 'No response generated', selectedModel, null, 'text');
+          await get().saveMessageWithoutImageToFirestore('assistant', data.reply || 'No response generated', selectedModel);
           console.log('[Store] Text message saved to Firestore successfully');
         } catch (firestoreError) {
           console.warn('[Store] Firestore save failed for assistant message:', firestoreError);
