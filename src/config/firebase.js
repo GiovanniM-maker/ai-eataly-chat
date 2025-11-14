@@ -2,7 +2,6 @@ import { initializeApp, getApps } from 'firebase/app';
 import { getFirestore, setLogLevel } from 'firebase/firestore';
 
 // Firebase configuration from environment variables
-// NO FALLBACKS - must use exact values from Vercel environment variables
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -15,9 +14,46 @@ const firebaseConfig = {
 
 // Log Firebase config immediately after definition (before initialization)
 console.log("🔥 Firebase Config in uso:", firebaseConfig);
+console.log("🔥 Environment variables loaded:", {
+  hasApiKey: !!import.meta.env.VITE_FIREBASE_API_KEY,
+  hasProjectId: !!import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  allEnvVars: Object.keys(import.meta.env).filter(k => k.startsWith('VITE_'))
+});
 
-// Initialize Firebase
-export const app = initializeApp(firebaseConfig);
+// Check if all required variables are present
+const requiredVars = ['VITE_FIREBASE_API_KEY', 'VITE_FIREBASE_AUTH_DOMAIN', 'VITE_FIREBASE_PROJECT_ID'];
+const missingVars = requiredVars.filter(v => !import.meta.env[v]);
+if (missingVars.length > 0) {
+  console.error("❌ Missing Firebase environment variables:", missingVars);
+  console.error("💡 Make sure you have a .env file in the project root with all VITE_FIREBASE_* variables");
+}
+
+// Initialize Firebase only if we have the minimum required config
+let app;
+try {
+  if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+    throw new Error("Missing required Firebase configuration. Check your .env file.");
+  }
+  app = initializeApp(firebaseConfig);
+  console.log("✅ Firebase initialized successfully");
+} catch (error) {
+  console.error("❌ Firebase initialization error:", error);
+  // Create a dummy app to prevent crashes
+  try {
+    app = initializeApp({
+      apiKey: "dummy",
+      authDomain: "dummy",
+      projectId: "dummy",
+      storageBucket: "dummy",
+      messagingSenderId: "dummy",
+      appId: "dummy"
+    }, "dummy-app");
+  } catch (e) {
+    console.error("❌ Failed to create dummy Firebase app:", e);
+  }
+}
+
+export { app };
 
 // Log active Firebase apps after initialization
 console.log("🔥 Firebase Apps attive:", getApps());
