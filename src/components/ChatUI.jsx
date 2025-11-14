@@ -1,15 +1,26 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useChatStore, testFirestoreRead, testFirestoreWrite } from '../store/chatStore';
 
 /**
- * Minimal Chat UI Component
+ * Minimal Chat UI Component with Firestore persistence
  */
 const ChatUI = () => {
-  const { messages, sendMessage } = useChatStore();
+  const { messages, sendMessage, loadMessages, firestoreError, loading } = useChatStore();
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [firestoreStatus, setFirestoreStatus] = useState(null);
+  const messagesEndRef = useRef(null);
+
+  // Load messages on mount
+  useEffect(() => {
+    loadMessages();
+  }, [loadMessages]);
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -66,14 +77,18 @@ const ChatUI = () => {
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto px-6 py-6">
         <div className="max-w-4xl mx-auto space-y-4">
-          {messages.length === 0 ? (
+          {loading && messages.length === 0 ? (
+            <div className="text-center text-gray-400 mt-12">
+              <p>Loading messages...</p>
+            </div>
+          ) : messages.length === 0 ? (
             <div className="text-center text-gray-400 mt-12">
               <p>Start a conversation by typing a message below</p>
             </div>
           ) : (
-            messages.map((message, index) => (
+            messages.map((message) => (
               <div
-                key={index}
+                key={message.id || `msg-${message.timestamp}`}
                 className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
                 <div
@@ -95,6 +110,7 @@ const ChatUI = () => {
               </div>
             </div>
           )}
+          <div ref={messagesEndRef} />
         </div>
       </div>
 
@@ -104,6 +120,11 @@ const ChatUI = () => {
           {error && (
             <div className="mb-3 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
               {error}
+            </div>
+          )}
+          {firestoreError && (
+            <div className="mb-3 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
+              Firestore Error: {firestoreError}
             </div>
           )}
           {firestoreStatus && (
@@ -156,4 +177,3 @@ const ChatUI = () => {
 };
 
 export default ChatUI;
-
