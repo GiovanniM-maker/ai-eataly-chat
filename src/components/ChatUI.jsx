@@ -8,7 +8,17 @@ import { getModelDisplayName } from '../constants/models';
  * Minimal Chat UI Component with Firestore persistence
  */
 const ChatUI = () => {
-  const { messages, sendMessage, sendImageMessage, loadMessages, firestoreError, loading, selectedModel } = useChatStore();
+  const { 
+    messages, 
+    sendMessage, 
+    sendImageMessage, 
+    loadMessages, 
+    firestoreError, 
+    loading, 
+    selectedModel,
+    loadModelConfig,
+    buildModelSettings
+  } = useChatStore();
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -24,6 +34,9 @@ const ChatUI = () => {
   // Load chats and messages on mount
   useEffect(() => {
     loadChatsFromFirestore();
+    // Load model configs on mount to ensure settings are available
+    const { loadAllModelConfigs } = useChatStore.getState();
+    loadAllModelConfigs();
   }, [loadChatsFromFirestore]);
 
   // Load messages when active chat changes

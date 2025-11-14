@@ -6,7 +6,7 @@ import { ALL_MODELS, getModelDisplayName } from '../constants/models';
  * Model Settings Panel - Full configuration UI for all models
  */
 const ModelSettings = ({ isOpen, onClose }) => {
-  const { modelConfigs, loadModelConfig, saveModelConfig, loadAllModelConfigs } = useChatStore();
+  const { modelConfigs, loadModelConfig, saveModelConfig, loadAllModelConfigs, debugMode, setDebugMode } = useChatStore();
   const [selectedModel, setSelectedModel] = useState(ALL_MODELS[0]);
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -294,6 +294,27 @@ const ModelSettings = ({ isOpen, onClose }) => {
                 <label htmlFor="enabled" className="text-sm font-medium text-gray-300">
                   Model Enabled
                 </label>
+              </div>
+
+              {/* DEBUG MODE Toggle */}
+              <div className="border-t border-gray-800 pt-4 mt-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label htmlFor="debugMode" className="text-sm font-medium text-gray-300 block mb-1">
+                      DEBUG MODE
+                    </label>
+                    <p className="text-xs text-gray-400">
+                      Enable detailed logging in API responses and console
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    id="debugMode"
+                    checked={debugMode}
+                    onChange={(e) => setDebugMode(e.target.checked)}
+                    className="w-4 h-4 text-yellow-600 bg-gray-800 border-gray-700 rounded focus:ring-yellow-500"
+                  />
+                </div>
               </div>
             </div>
           )}

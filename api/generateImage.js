@@ -12,14 +12,16 @@ const ALLOWED_ORIGINS = [
  * Call Vertex AI Imagen predict endpoint
  * ONLY for imagen-4
  */
-const callImagenAPI = async (prompt, modelConfig = null) => {
-  console.log("[API:IMAGEN] ========================================");
-  console.log("[API:IMAGEN] IMAGEN 4 IMAGE GENERATION REQUEST");
-  console.log("[API:IMAGEN] Prompt:", prompt);
+const callImagenAPI = async (prompt, modelConfig = null, modelSettings = null) => {
+  const DEBUG_MODE = process.env.DEBUG_MODE === "true";
+  
+  if (DEBUG_MODE) {
+    console.log("[DEBUG] ============ IMAGEN API CALL =============");
+    console.log("[DEBUG] Prompt:", prompt);
+  }
 
   try {
     // Generate access token using google-auth-library
-    console.log("[API:IMAGEN] Generating access token...");
     const sa = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
     
     const auth = new GoogleAuth({
@@ -29,12 +31,18 @@ const callImagenAPI = async (prompt, modelConfig = null) => {
 
     const client = await auth.getClient();
     const { token: accessToken } = await client.getAccessToken();
-    console.log("[API:IMAGEN] Access token obtained");
 
     // Endpoint corretto: imagen-4:predict
     const endpoint = "https://us-central1-aiplatform.googleapis.com/v1/projects/eataly-creative-ai-suite/locations/us-central1/publishers/google/models/imagen-4:predict";
     
-    console.log("[API:IMAGEN] Endpoint:", endpoint);
+    if (DEBUG_MODE) {
+      console.log("[DEBUG] Endpoint:", endpoint);
+    }
+
+    // Extract modelSettings (override Firestore config if provided)
+    const {
+      aspect_ratio
+    } = modelSettings || {};
 
     // Request body: { instances: [{ prompt }], parameters: { sampleCount, aspectRatio } }
     const requestBody = {
@@ -45,12 +53,14 @@ const callImagenAPI = async (prompt, modelConfig = null) => {
       ],
       parameters: {
         sampleCount: modelConfig?.sampleCount ?? 1,
-        aspectRatio: modelConfig?.aspectRatio || '1:1'
+        aspectRatio: aspect_ratio || modelConfig?.aspectRatio || '1:1'
       }
     };
 
-    console.log("[API:IMAGEN] Request Body:", JSON.stringify(requestBody, null, 2));
-    console.log("[API:IMAGEN] NOTE: Using predict endpoint with instances/parameters format");
+    if (DEBUG_MODE) {
+      console.log("[DEBUG] ============ PAYLOAD =============");
+      console.log(JSON.stringify(requestBody, null, 2));
+    }
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -73,14 +83,13 @@ const callImagenAPI = async (prompt, modelConfig = null) => {
     }
 
     const data = await response.json();
-    console.log("[API:IMAGEN] Imagen response received");
-    console.log("[API:IMAGEN] Response keys:", Object.keys(data));
     
-    // Log raw response for debugging
-    console.log("[API:IMAGEN] ========================================");
-    console.log("[API:IMAGEN] RAW RESPONSE (full):");
-    console.log(JSON.stringify(data, null, 2));
-    console.log("[API:IMAGEN] ========================================");
+    const DEBUG_MODE = process.env.DEBUG_MODE === "true";
+    
+    if (DEBUG_MODE) {
+      console.log("[DEBUG] ============ RAW RESPONSE =========");
+      console.log(JSON.stringify(data, null, 2));
+    }
     
     // Extract base64 image from response
     // Try predictions[0].imageBase64 first, then bytesBase64Encoded
@@ -88,12 +97,12 @@ const callImagenAPI = async (prompt, modelConfig = null) => {
     
     if (data.predictions?.[0]?.imageBase64) {
       imageBase64 = data.predictions[0].imageBase64;
-      console.log("[API:IMAGEN] Extracted image from predictions[0].imageBase64");
     } else if (data.predictions?.[0]?.bytesBase64Encoded) {
       imageBase64 = data.predictions[0].bytesBase64Encoded;
-      console.log("[API:IMAGEN] Extracted image from predictions[0].bytesBase64Encoded");
     } else {
-      console.error("[API:IMAGEN] Imagen response structure:", JSON.stringify(data, null, 2));
+      if (DEBUG_MODE) {
+        console.error("[DEBUG] Imagen response structure:", JSON.stringify(data, null, 2));
+      }
       throw new Error('Imagen response missing image data in predictions[0].imageBase64 or predictions[0].bytesBase64Encoded');
     }
     
@@ -101,11 +110,12 @@ const callImagenAPI = async (prompt, modelConfig = null) => {
       throw new Error('No image data found in Imagen API response');
     }
     
-    console.log("[API:IMAGEN] Image extracted successfully");
-    console.log("[API:IMAGEN] Final base64 length:", imageBase64.length, "characters");
-    console.log("[API:IMAGEN] ========================================");
+    if (DEBUG_MODE) {
+      console.log("[DEBUG] ============ EXTRACTED IMAGE =========");
+      console.log("[DEBUG] Base64 length:", imageBase64.length, "characters");
+    }
     
-    return imageBase64;
+    return { imageBase64, rawResponse: DEBUG_MODE ? data : undefined };
   } catch (error) {
     console.error("[API:IMAGEN] ========================================");
     console.error("[API:IMAGEN] ERROR in callImagenAPI:");
@@ -144,13 +154,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    console.log('[API:IMAGEN] Incoming image generation request', {
-      method: req.method,
-      origin: req.headers.origin,
-      url: req.url
-    });
+    const DEBUG_MODE = process.env.DEBUG_MODE === "true";
+    
+    if (DEBUG_MODE) {
+      console.log("[DEBUG] ============ INCOMING =============");
+      console.log(JSON.stringify(req.body, null, 2));
+    }
 
-    const { prompt, model } = req.body;
+    const { prompt, model, modelSettings } = req.body;
 
     // Validate required fields
     if (!prompt || typeof prompt !== 'string') {
@@ -179,16 +190,30 @@ export default async function handler(req, res) {
 
     // Generate image via Vertex AI
     console.log('[API:IMAGEN] Calling Imagen API:', { prompt, model: modelToUse });
-    const imageBase64 = await callImagenAPI(prompt, modelConfig);
+    const result = await callImagenAPI(prompt, modelConfig, modelSettings);
 
-    if (!imageBase64) {
+    if (!result.imageBase64) {
       return res.status(500).json({ error: 'Failed to generate image' });
     }
 
-    return res.status(200).json({
-      image: imageBase64,
-      imageBase64: imageBase64 // Backward compatibility
-    });
+    const responseData = {
+      image: result.imageBase64,
+      imageBase64: result.imageBase64 // Backward compatibility
+    };
+
+    if (DEBUG_MODE) {
+      responseData.debug = {
+        request: {
+          model: modelToUse,
+          prompt,
+          modelSettings,
+          modelConfig
+        },
+        response: result.rawResponse
+      };
+    }
+
+    return res.status(200).json(responseData);
   } catch (error) {
     console.error('[API:IMAGEN] ERROR:', error);
     return res.status(500).json({

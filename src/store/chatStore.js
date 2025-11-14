@@ -806,6 +806,9 @@ export const useChatStore = create((set, get) => ({
       console.log('[Store] Endpoint:', apiUrl);
       console.log('[Store] Prompt:', prompt);
 
+      // Build modelSettings from current config
+      const modelSettings = get().buildModelSettings(modelToUse);
+      
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -813,7 +816,8 @@ export const useChatStore = create((set, get) => ({
         },
         body: JSON.stringify({
           model: config.googleModel,
-          prompt: prompt
+          prompt: prompt,
+          ...(modelSettings && { modelSettings })
         }),
       });
 
@@ -893,6 +897,9 @@ export const useChatStore = create((set, get) => ({
       console.log('[Store] Endpoint:', apiUrl);
       console.log('[Store] Prompt:', prompt);
 
+      // Build modelSettings from current config
+      const modelSettings = get().buildModelSettings(modelToUse);
+      
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
@@ -900,7 +907,8 @@ export const useChatStore = create((set, get) => ({
         },
         body: JSON.stringify({
           model: config.googleModel,
-          prompt: prompt
+          prompt: prompt,
+          ...(modelSettings && { modelSettings })
         }),
       });
 
@@ -1080,6 +1088,9 @@ export const useChatStore = create((set, get) => ({
         console.log('[Store] Calling API:', apiUrl);
         console.log('[Store] Request body:', { message, model: config.googleModel });
 
+        // Build modelSettings from current config
+        const modelSettings = get().buildModelSettings(selectedModel);
+        
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: {
@@ -1087,7 +1098,8 @@ export const useChatStore = create((set, get) => ({
           },
           body: JSON.stringify({
             message: message,
-            model: config.googleModel
+            model: config.googleModel,
+            ...(modelSettings && { modelSettings })
           }),
         });
 
@@ -1164,6 +1176,7 @@ export const useChatStore = create((set, get) => ({
    * Model Configuration Management
    */
   modelConfigs: {}, // Cache for model configs
+  debugMode: false, // DEBUG MODE toggle
 
   /**
    * Load model configuration from Firestore
@@ -1280,6 +1293,62 @@ export const useChatStore = create((set, get) => ({
       set({ firestoreError: error.message });
       throw error;
     }
+  },
+
+  /**
+   * Set DEBUG MODE
+   */
+  setDebugMode: (enabled) => {
+    set({ debugMode: enabled });
+    console.log('[Store] DEBUG MODE:', enabled ? 'ENABLED' : 'DISABLED');
+  },
+
+  /**
+   * Build modelSettings object from current model config
+   */
+  buildModelSettings: (modelId) => {
+    const { modelConfigs } = get();
+    const config = modelConfigs[modelId];
+    
+    if (!config) {
+      return null;
+    }
+    
+    const modelSettings = {};
+    
+    if (config.systemPrompt) {
+      modelSettings.system = config.systemPrompt;
+    }
+    
+    if (config.temperature !== undefined) {
+      modelSettings.temperature = config.temperature;
+    }
+    
+    if (config.topP !== undefined) {
+      modelSettings.top_p = config.topP;
+    }
+    
+    if (config.maxOutputTokens !== undefined) {
+      modelSettings.max_output_tokens = config.maxOutputTokens;
+    }
+    
+    // For image models
+    if (config.aspectRatio) {
+      modelSettings.aspect_ratio = config.aspectRatio;
+    }
+    
+    // For Nanobanana
+    if (config.outputType) {
+      // Map Firestore outputType to API format
+      const outputTypeMap = {
+        'TEXT': 'text',
+        'IMAGE': 'image',
+        'TEXT+IMAGE': 'both'
+      };
+      modelSettings.output_type = outputTypeMap[config.outputType] || config.outputType.toLowerCase();
+    }
+    
+    return Object.keys(modelSettings).length > 0 ? modelSettings : null;
   },
 
   /**

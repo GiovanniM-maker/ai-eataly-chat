@@ -114,16 +114,28 @@ const getAccessToken = async () => {
  * Call Google Gemini API (REST API v1)
  * ONLY for gemini-2.5-flash (text model)
  */
-const callGeminiAPI = async (model, message, modelConfig = null) => {
+const callGeminiAPI = async (model, message, modelConfig = null, modelSettings = null) => {
   const accessToken = await getAccessToken();
   
   // Gemini 2.x models use v1 API
   const apiVersion = "v1";
   const endpoint = `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent`;
   
-  console.log("[API] Using model:", model);
-  console.log("[API] Endpoint:", endpoint);
-  console.log("[API] Model config:", modelConfig ? 'loaded' : 'using defaults');
+  const DEBUG_MODE = process.env.DEBUG_MODE === "true";
+  
+  if (DEBUG_MODE) {
+    console.log("[DEBUG] ============ GEMINI API CALL =============");
+    console.log("[DEBUG] Model:", model);
+    console.log("[DEBUG] Endpoint:", endpoint);
+  }
+
+  // Extract modelSettings (override Firestore config if provided)
+  const {
+    system,
+    temperature,
+    top_p,
+    max_output_tokens
+  } = modelSettings || {};
 
   // Build request body with config
   const requestBody = {
@@ -135,20 +147,39 @@ const callGeminiAPI = async (model, message, modelConfig = null) => {
     ]
   };
 
-  // Add system instruction if configured
-  if (modelConfig?.systemPrompt) {
+  // Add system instruction (priority: modelSettings > Firestore config)
+  const systemPrompt = system || modelConfig?.systemPrompt;
+  if (systemPrompt) {
     requestBody.systemInstruction = {
       role: 'system',
-      parts: [{ text: modelConfig.systemPrompt }]
+      parts: [{ text: systemPrompt }]
     };
   }
 
-  // Add generation config
-  requestBody.generationConfig = {
-    temperature: modelConfig?.temperature ?? 0.7,
-    topP: modelConfig?.topP ?? 0.95,
-    maxOutputTokens: modelConfig?.maxOutputTokens ?? 8192
-  };
+  // Add generation config (only include defined fields)
+  requestBody.generationConfig = {};
+  if (temperature !== undefined) {
+    requestBody.generationConfig.temperature = temperature;
+  } else if (modelConfig?.temperature !== undefined) {
+    requestBody.generationConfig.temperature = modelConfig.temperature;
+  }
+  
+  if (top_p !== undefined) {
+    requestBody.generationConfig.topP = top_p;
+  } else if (modelConfig?.topP !== undefined) {
+    requestBody.generationConfig.topP = modelConfig.topP;
+  }
+  
+  if (max_output_tokens !== undefined) {
+    requestBody.generationConfig.maxOutputTokens = max_output_tokens;
+  } else if (modelConfig?.maxOutputTokens !== undefined) {
+    requestBody.generationConfig.maxOutputTokens = modelConfig.maxOutputTokens;
+  }
+
+  if (DEBUG_MODE) {
+    console.log("[DEBUG] ============ PAYLOAD =============");
+    console.log(JSON.stringify(requestBody, null, 2));
+  }
 
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -165,6 +196,12 @@ const callGeminiAPI = async (model, message, modelConfig = null) => {
   }
 
   const data = await response.json();
+  
+  if (DEBUG_MODE) {
+    console.log("[DEBUG] ============ RAW RESPONSE =========");
+    console.log(JSON.stringify(data, null, 2));
+  }
+  
   console.log("[API] Gemini response OK");
   return data;
 };
@@ -197,13 +234,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    console.log('[API] Incoming request', {
-      method: req.method,
-      origin: req.headers.origin,
-      url: req.url
-    });
+    const DEBUG_MODE = process.env.DEBUG_MODE === "true";
+    
+    if (DEBUG_MODE) {
+      console.log("[DEBUG] ============ INCOMING =============");
+      console.log(JSON.stringify(req.body, null, 2));
+    }
 
-    const { message, model: requestedModel } = req.body;
+    const { message, model: requestedModel, modelSettings } = req.body;
 
     // Validate required fields
     if (!message || typeof message !== 'string') {
@@ -230,16 +268,35 @@ export default async function handler(req, res) {
       });
     }
 
-    // Call Gemini API with config
+    // Call Gemini API with config and modelSettings
     console.log('[API] Calling Gemini API:', { model, messageLength: message.length });
-    const result = await callGeminiAPI(model, message, modelConfig);
+    const result = await callGeminiAPI(model, message, modelConfig, modelSettings);
 
     // Extract reply from response
     const reply = result.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated';
 
-    return res.status(200).json({
+    if (DEBUG_MODE) {
+      console.log("[DEBUG] ============ EXTRACTED TEXT =========");
+      console.log(reply);
+    }
+
+    const responseData = {
       reply,
-    });
+    };
+
+    if (DEBUG_MODE) {
+      responseData.debug = {
+        request: {
+          model,
+          message,
+          modelSettings,
+          modelConfig
+        },
+        response: result
+      };
+    }
+
+    return res.status(200).json(responseData);
   } catch (error) {
     console.error('[API] ERROR:', error);
     return res.status(500).json({

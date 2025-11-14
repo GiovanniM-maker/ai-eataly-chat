@@ -70,13 +70,15 @@ function extractText(obj) {
  * Call Vertex AI Gemini generateContent (NOT streaming)
  * Supports gemini-2.5-flash-image and gemini-2.5-nano-banana
  */
-const callNanobananaAPI = async (prompt, modelConfig = null) => {
-  console.log("[API:NANOBANANA] ========================================");
-  console.log("[API:NANOBANANA] NANOBANANA IMAGE GENERATION REQUEST");
-  console.log("[API:NANOBANANA] Prompt:", prompt);
+const callNanobananaAPI = async (prompt, modelConfig = null, modelSettings = null) => {
+  const DEBUG_MODE = process.env.DEBUG_MODE === "true";
+  
+  if (DEBUG_MODE) {
+    console.log("[DEBUG] ============ NANOBANANA API CALL =============");
+    console.log("[DEBUG] Prompt:", prompt);
+  }
 
   // STEP 1: Generate access token using google-auth-library
-  console.log("[API:NANOBANANA] Generating access token...");
   const sa = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
   
   const auth = new GoogleAuth({
@@ -86,12 +88,22 @@ const callNanobananaAPI = async (prompt, modelConfig = null) => {
 
   const client = await auth.getClient();
   const { token: accessToken } = await client.getAccessToken();
-  console.log("[API:NANOBANANA] Access token obtained");
 
   // STEP 2: Call Vertex AI generateContent (NOT streaming)
   const endpoint = "https://us-central1-aiplatform.googleapis.com/v1/projects/eataly-creative-ai-suite/locations/us-central1/publishers/google/models/gemini-2.5-flash-image:generateContent";
   
-  console.log("[API:NANOBANANA] Endpoint:", endpoint);
+  if (DEBUG_MODE) {
+    console.log("[DEBUG] Endpoint:", endpoint);
+  }
+
+  // Extract modelSettings (override Firestore config if provided)
+  const {
+    system,
+    temperature,
+    top_p,
+    max_output_tokens,
+    output_type
+  } = modelSettings || {};
 
   // Build request body with config
   const body = {
@@ -103,33 +115,53 @@ const callNanobananaAPI = async (prompt, modelConfig = null) => {
     ]
   };
 
-  // Add system instruction if configured
-  if (modelConfig?.systemPrompt) {
+  // Add system instruction (priority: modelSettings > Firestore config)
+  const systemPrompt = system || modelConfig?.systemPrompt;
+  if (systemPrompt) {
     body.systemInstruction = {
       role: 'system',
-      parts: [{ text: modelConfig.systemPrompt }]
+      parts: [{ text: systemPrompt }]
     };
   }
 
-  // Add generation config
-  body.generationConfig = {
-    temperature: modelConfig?.temperature ?? 0.7,
-    topP: modelConfig?.topP ?? 0.95,
-    maxOutputTokens: modelConfig?.maxOutputTokens ?? 8192
-  };
+  // Add generation config (only include defined fields)
+  body.generationConfig = {};
+  
+  if (temperature !== undefined) {
+    body.generationConfig.temperature = temperature;
+  } else if (modelConfig?.temperature !== undefined) {
+    body.generationConfig.temperature = modelConfig.temperature;
+  }
+  
+  if (top_p !== undefined) {
+    body.generationConfig.topP = top_p;
+  } else if (modelConfig?.topP !== undefined) {
+    body.generationConfig.topP = modelConfig.topP;
+  }
+  
+  if (max_output_tokens !== undefined) {
+    body.generationConfig.maxOutputTokens = max_output_tokens;
+  } else if (modelConfig?.maxOutputTokens !== undefined) {
+    body.generationConfig.maxOutputTokens = modelConfig.maxOutputTokens;
+  }
 
-  // Add response modalities based on outputType
-  const outputType = modelConfig?.outputType || 'IMAGE';
-  if (outputType === 'TEXT+IMAGE') {
+  // Add response modalities based on outputType (priority: modelSettings > Firestore config)
+  const outputType = output_type || modelConfig?.outputType || 'IMAGE';
+  const normalizedOutputType = outputType.toUpperCase();
+  
+  if (normalizedOutputType === 'TEXT+IMAGE' || normalizedOutputType === 'BOTH') {
     body.generationConfig.responseModalities = ['TEXT', 'IMAGE'];
-  } else if (outputType === 'TEXT') {
+  } else if (normalizedOutputType === 'TEXT') {
     body.generationConfig.responseModalities = ['TEXT'];
   } else {
     body.generationConfig.responseModalities = ['IMAGE'];
   }
 
-  console.log("[API:NANOBANANA] Request Body:", JSON.stringify(body, null, 2));
-  console.log("[API:NANOBANANA] Output Type:", outputType);
+  if (DEBUG_MODE) {
+    console.log("[DEBUG] ============ PAYLOAD =============");
+    console.log(JSON.stringify(body, null, 2));
+    console.log("[DEBUG] Output Type:", normalizedOutputType);
+  }
 
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -153,41 +185,44 @@ const callNanobananaAPI = async (prompt, modelConfig = null) => {
 
   // STEP 3: Extract image (NO STREAMING)
   const data = await response.json();
-  console.log("[API:NANOBANANA] Response received");
-  console.log("[API:NANOBANANA] Response keys:", Object.keys(data));
   
-  // Log raw response for debugging
-  console.log("[API:NANOBANANA] ========================================");
-  console.log("[API:NANOBANANA] RAW RESPONSE (full):");
-  console.log(JSON.stringify(data, null, 2));
-  console.log("[API:NANOBANANA] ========================================");
+  const DEBUG_MODE = process.env.DEBUG_MODE === "true";
+  
+  if (DEBUG_MODE) {
+    console.log("[DEBUG] ============ RAW RESPONSE =========");
+    console.log(JSON.stringify(data, null, 2));
+  }
 
   // Extract both text and image based on outputType
-  const outputType = modelConfig?.outputType || 'IMAGE';
+  const outputType = output_type || modelConfig?.outputType || 'IMAGE';
+  const normalizedOutputType = outputType.toUpperCase();
   const text = extractText(data);
   const imageBase64 = extractImageBase64(data);
 
-  if (outputType === 'TEXT+IMAGE') {
-    console.log("[API:NANOBANANA] Extracted TEXT+IMAGE response");
-    console.log("[API:NANOBANANA] Text length:", text?.length || 0);
-    console.log("[API:NANOBANANA] Image base64 length:", imageBase64?.length || 0);
-    return { text, imageBase64 };
-  } else if (outputType === 'TEXT') {
+  if (DEBUG_MODE) {
+    console.log("[DEBUG] ============ EXTRACTED =========");
+    console.log("[DEBUG] Output Type:", normalizedOutputType);
+    console.log("[DEBUG] Text length:", text?.length || 0);
+    console.log("[DEBUG] Image base64 length:", imageBase64?.length || 0);
+  }
+
+  if (normalizedOutputType === 'TEXT+IMAGE' || normalizedOutputType === 'BOTH') {
+    return { text, imageBase64, rawResponse: DEBUG_MODE ? data : undefined };
+  } else if (normalizedOutputType === 'TEXT') {
     if (!text) {
       throw new Error('No text data found in Nanobanana API response');
     }
-    console.log("[API:NANOBANANA] Extracted TEXT response");
-    return { text, imageBase64: null };
+    return { text, imageBase64: null, rawResponse: DEBUG_MODE ? data : undefined };
   } else {
     // IMAGE mode
     if (!imageBase64) {
       console.error("[API:NANOBANANA] Failed to extract image from response");
-      console.error("[API:NANOBANANA] Full response structure:", JSON.stringify(data, null, 2));
+      if (DEBUG_MODE) {
+        console.error("[DEBUG] Full response structure:", JSON.stringify(data, null, 2));
+      }
       throw new Error('No image data found in Nanobanana API response');
     }
-    console.log("[API:NANOBANANA] Image extracted successfully");
-    console.log("[API:NANOBANANA] Final base64 length:", imageBase64.length, "characters");
-    return { text: null, imageBase64 };
+    return { text: null, imageBase64, rawResponse: DEBUG_MODE ? data : undefined };
   }
 };
 
@@ -219,13 +254,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    console.log('[API:NANOBANANA] Incoming Nanobanana image generation request', {
-      method: req.method,
-      origin: req.headers.origin,
-      url: req.url
-    });
+    const DEBUG_MODE = process.env.DEBUG_MODE === "true";
+    
+    if (DEBUG_MODE) {
+      console.log("[DEBUG] ============ INCOMING =============");
+      console.log(JSON.stringify(req.body, null, 2));
+    }
 
-    const { prompt, model } = req.body;
+    const { prompt, model, modelSettings } = req.body;
 
     // Validate required fields
     if (!prompt || typeof prompt !== 'string') {
@@ -253,32 +289,46 @@ export default async function handler(req, res) {
       });
     }
 
-    // Generate via Vertex AI generateContent (NOT streaming)
-    console.log('[API:NANOBANANA] Calling Nanobanana API:', { prompt, model: modelToUse, outputType: modelConfig.outputType });
-    const result = await callNanobananaAPI(prompt, modelConfig);
+    // Determine output type (priority: modelSettings > Firestore config)
+    const outputType = modelSettings?.output_type || modelConfig.outputType || 'IMAGE';
+    const normalizedOutputType = outputType.toUpperCase();
 
-    // Return based on output type
-    if (modelConfig.outputType === 'TEXT+IMAGE') {
-      return res.status(200).json({
-        text: result.text,
-        image: result.imageBase64,
-        imageBase64: result.imageBase64 // Backward compatibility
-      });
-    } else if (modelConfig.outputType === 'TEXT') {
-      return res.status(200).json({
-        text: result.text,
-        reply: result.text // For compatibility
-      });
+    // Generate via Vertex AI generateContent (NOT streaming)
+    console.log('[API:NANOBANANA] Calling Nanobanana API:', { prompt, model: modelToUse, outputType: normalizedOutputType });
+    const result = await callNanobananaAPI(prompt, modelConfig, modelSettings);
+
+    // Build response
+    const responseData = {};
+    
+    if (normalizedOutputType === 'TEXT+IMAGE' || normalizedOutputType === 'BOTH') {
+      responseData.text = result.text;
+      responseData.image = result.imageBase64;
+      responseData.imageBase64 = result.imageBase64; // Backward compatibility
+    } else if (normalizedOutputType === 'TEXT') {
+      responseData.text = result.text;
+      responseData.reply = result.text; // For compatibility
     } else {
       // IMAGE mode
       if (!result.imageBase64) {
         return res.status(500).json({ error: 'Failed to generate image' });
       }
-      return res.status(200).json({
-        image: result.imageBase64,
-        imageBase64: result.imageBase64 // Backward compatibility
-      });
+      responseData.image = result.imageBase64;
+      responseData.imageBase64 = result.imageBase64; // Backward compatibility
     }
+
+    if (DEBUG_MODE) {
+      responseData.debug = {
+        request: {
+          model: modelToUse,
+          prompt,
+          modelSettings,
+          modelConfig
+        },
+        response: result.rawResponse || result
+      };
+    }
+
+    return res.status(200).json(responseData);
   } catch (error) {
     console.error('[API:NANOBANANA] ERROR:', error);
     return res.status(500).json({
