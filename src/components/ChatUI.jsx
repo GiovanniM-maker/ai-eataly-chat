@@ -705,20 +705,20 @@ const ChatUI = () => {
               className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-fast flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
               style={{
                 background: (input.trim().length > 0 || pendingImages.length > 0) && !isLoading
-                  ? 'var(--accent-primary)'
+                  ? '#3A5FE6' // Slightly darker blue
                   : 'var(--border-subtle)',
                 transform: 'scale(1)',
               }}
               onMouseEnter={(e) => {
                 if (!e.currentTarget.disabled) {
                   e.currentTarget.style.transform = 'scale(1.08)';
-                  e.currentTarget.style.background = '#3D63FF';
+                  e.currentTarget.style.background = '#2D4FD9'; // Even darker on hover
                 }
               }}
               onMouseLeave={(e) => {
                 if (!e.currentTarget.disabled) {
                   e.currentTarget.style.transform = 'scale(1)';
-                  e.currentTarget.style.background = 'var(--accent-primary)';
+                  e.currentTarget.style.background = '#3A5FE6'; // Back to darker blue
                 }
               }}
             >
