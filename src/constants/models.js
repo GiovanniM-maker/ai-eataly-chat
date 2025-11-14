@@ -2,26 +2,51 @@
  * Model information and descriptions
  */
 export const MODEL_INFO = {
+  // Text models
   "gemini-2.5-pro": "Il modello più avanzato: ragionamento top, coding avanzato, multimodale (testo+immagini+audio+video), context window enorme (~1M token).",
   "gemini-2.5-flash": "Modello bilanciato, multimodale, ottimo per task generali con buon tradeoff tra qualità e velocità.",
   "gemini-2.5-flash-lite": "Versione leggera: latenza bassissima, costi minimi, multitasking multimodale.",
+  "gemini-1.5-pro": "Modello Pro della serie 1.5: ragionamento avanzato, multimodale, context window esteso.",
+  "gemini-1.5-flash": "Modello Flash della serie 1.5: bilanciato tra velocità e qualità.",
+  
+  // Image generation models
   "gemini-2.5-flash-image": "Variante specializzata immagini (Nano Banana): generazione, editing, fusioni, multi-image input.",
   "imagen-4": "Modello text-to-image ad alta qualità della famiglia Imagen. Output molto realistici, dettagliati.",
   "imagen-4-ultra": "Versione Ultra: risultati top-tier per rendering fotorealistici, prodotti, ritratti, scenari complessi.",
-  "imagen-4-fast": "Variante Fast: generazione rapida a qualità leggermente ridotta."
+  "imagen-4-fast": "Variante Fast: generazione rapida a qualità leggermente ridotta.",
+  "imagen-3": "Modello Imagen 3: generazione immagini di alta qualità.",
+  
+  // Vision models
+  "gemini-2.5-pro-vision": "Modello Vision multimodale avanzato: analisi immagini, video, documenti con ragionamento complesso.",
+  "gemini-1.5-pro-vision": "Modello Vision Pro 1.5: analisi visiva avanzata con context window esteso.",
+  
+  // Audio models
+  "gemini-2.5-flash-audio": "Modello Audio: speech-to-text, text-to-speech, analisi audio, conversazioni vocali.",
+  "gemini-1.5-flash-audio": "Modello Audio Flash 1.5: elaborazione audio veloce ed efficiente."
 };
 
 /**
  * All available models
  */
 export const ALL_MODELS = [
+  // Text models
   "gemini-2.5-pro",
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
+  "gemini-1.5-pro",
+  "gemini-1.5-flash",
+  // Image generation models
   "gemini-2.5-flash-image",
   "imagen-4",
   "imagen-4-ultra",
-  "imagen-4-fast"
+  "imagen-4-fast",
+  "imagen-3",
+  // Vision models
+  "gemini-2.5-pro-vision",
+  "gemini-1.5-pro-vision",
+  // Audio models
+  "gemini-2.5-flash-audio",
+  "gemini-1.5-flash-audio"
 ];
 
 /**

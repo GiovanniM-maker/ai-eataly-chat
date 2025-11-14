@@ -14,6 +14,7 @@ import {
 import { db, app } from '../config/firebase';
 import { processImage } from '../utils/imageProcessor';
 import { DEFAULT_MODEL, isImagenModel } from '../constants/models';
+import { resolveModelConfig } from '../lib/modelRouter';
 
 /**
  * Get or create session ID from localStorage
@@ -84,7 +85,7 @@ export const useChatStore = create((set, get) => ({
       querySnapshot.forEach((doc) => {
         const data = doc.data();
         
-        // Handle image messages (new structure)
+        // Handle different message types
         if (data.type === 'image') {
           loadedMessages.push({
             id: doc.id,
@@ -92,6 +93,30 @@ export const useChatStore = create((set, get) => ({
             url: data.url,
             role: data.sender === 'user' ? 'user' : 'assistant',
             sender: data.sender,
+            messageType: 'image',
+            timestamp: data.createdAt?.toMillis?.() || data.createdAt?.seconds * 1000 || Date.now(),
+            model: data.model || DEFAULT_MODEL
+          });
+        } else if (data.type === 'vision') {
+          loadedMessages.push({
+            id: doc.id,
+            type: 'vision',
+            role: data.sender === 'user' ? 'user' : 'assistant',
+            sender: data.sender,
+            content: data.analysis || '',
+            messageType: 'vision',
+            timestamp: data.createdAt?.toMillis?.() || data.createdAt?.seconds * 1000 || Date.now(),
+            model: data.model || DEFAULT_MODEL
+          });
+        } else if (data.type === 'audio') {
+          loadedMessages.push({
+            id: doc.id,
+            type: 'audio',
+            role: data.sender === 'user' ? 'user' : 'assistant',
+            sender: data.sender,
+            content: data.transcript || '',
+            audioUrl: data.audioUrl || null,
+            messageType: 'audio',
             timestamp: data.createdAt?.toMillis?.() || data.createdAt?.seconds * 1000 || Date.now(),
             model: data.model || DEFAULT_MODEL
           });
@@ -102,6 +127,7 @@ export const useChatStore = create((set, get) => ({
             role: data.role,
             content: data.text || '',
             imageUrl: data.imageUrl || null, // Legacy support
+            messageType: 'text',
             timestamp: data.createdAt?.toMillis?.() || data.createdAt?.seconds * 1000 || Date.now(),
             model: data.model || DEFAULT_MODEL
           });
@@ -149,7 +175,7 @@ export const useChatStore = create((set, get) => ({
             if (change.type === 'added' && !seenIds.has(change.doc.id)) {
               const data = change.doc.data();
               
-              // Handle image messages (new structure)
+              // Handle different message types
               let newMessage;
               if (data.type === 'image') {
                 newMessage = {
@@ -158,6 +184,30 @@ export const useChatStore = create((set, get) => ({
                   url: data.url,
                   role: data.sender === 'user' ? 'user' : 'assistant',
                   sender: data.sender,
+                  messageType: 'image',
+                  timestamp: data.createdAt?.toMillis?.() || data.createdAt?.seconds * 1000 || Date.now(),
+                  model: data.model || DEFAULT_MODEL
+                };
+              } else if (data.type === 'vision') {
+                newMessage = {
+                  id: change.doc.id,
+                  type: 'vision',
+                  role: data.sender === 'user' ? 'user' : 'assistant',
+                  sender: data.sender,
+                  content: data.analysis || '',
+                  messageType: 'vision',
+                  timestamp: data.createdAt?.toMillis?.() || data.createdAt?.seconds * 1000 || Date.now(),
+                  model: data.model || DEFAULT_MODEL
+                };
+              } else if (data.type === 'audio') {
+                newMessage = {
+                  id: change.doc.id,
+                  type: 'audio',
+                  role: data.sender === 'user' ? 'user' : 'assistant',
+                  sender: data.sender,
+                  content: data.transcript || '',
+                  audioUrl: data.audioUrl || null,
+                  messageType: 'audio',
                   timestamp: data.createdAt?.toMillis?.() || data.createdAt?.seconds * 1000 || Date.now(),
                   model: data.model || DEFAULT_MODEL
                 };
@@ -168,6 +218,7 @@ export const useChatStore = create((set, get) => ({
                   role: data.role,
                   content: data.text || '',
                   imageUrl: data.imageUrl || null, // Legacy support
+                  messageType: 'text',
                   timestamp: data.createdAt?.toMillis?.() || data.createdAt?.seconds * 1000 || Date.now(),
                   model: data.model || DEFAULT_MODEL
                 };
@@ -261,39 +312,47 @@ export const useChatStore = create((set, get) => ({
 
   /**
    * Save message to Firestore
-   * For image messages: type: "image", url, sender, model, createdAt
-   * For text messages: role, text, model, createdAt
+   * Supports multiple message types: text, image, vision, audio
    */
-  saveMessageToFirestore: async (role, text, model = DEFAULT_MODEL, imageUrl = null) => {
+  saveMessageToFirestore: async (role, text, model = DEFAULT_MODEL, imageUrl = null, messageType = null, audioUrl = null) => {
     const { sessionId } = get();
     
     try {
       const messagesRef = getMessagesRef(sessionId);
       
-      // If imageUrl is provided, save as image message
-      if (imageUrl) {
-        const messageData = {
-          type: 'image',
-          url: imageUrl,
-          sender: role === 'user' ? 'user' : 'assistant',
-          model,
-          createdAt: serverTimestamp()
-        };
-        const docRef = await addDoc(messagesRef, messageData);
-        console.log('[Store] Image message saved to Firestore:', docRef.id);
-        return docRef.id;
+      // Determine message type
+      let finalType = messageType;
+      if (!finalType && imageUrl) {
+        finalType = 'image';
+      } else if (!finalType) {
+        finalType = 'text';
       }
       
-      // Otherwise, save as text message
-      const messageData = {
-        role,
-        text: text || null,
+      // Build message data based on type
+      let messageData = {
+        sender: role === 'user' ? 'user' : 'assistant',
         model,
         createdAt: serverTimestamp()
       };
+      
+      if (finalType === 'image') {
+        messageData.type = 'image';
+        messageData.url = imageUrl || null;
+      } else if (finalType === 'vision') {
+        messageData.type = 'vision';
+        messageData.analysis = text || null;
+      } else if (finalType === 'audio') {
+        messageData.type = 'audio';
+        messageData.transcript = text || null;
+        messageData.audioUrl = audioUrl || null;
+      } else {
+        // Text message (legacy structure for backward compatibility)
+        messageData.role = role;
+        messageData.text = text || null;
+      }
 
       const docRef = await addDoc(messagesRef, messageData);
-      console.log('[Store] Message saved to Firestore:', docRef.id);
+      console.log('[Store] Message saved to Firestore:', docRef.id, 'type:', finalType);
       return docRef.id;
     } catch (error) {
       console.error('[Store] Error saving message to Firestore:', error);
@@ -494,48 +553,15 @@ export const useChatStore = create((set, get) => ({
   },
 
   /**
-   * Send a message to /api/chat and get reply
+   * Send a message using automatic model routing
    */
   sendMessage: async (message) => {
     const { sessionId, selectedModel } = get();
     
     try {
-      // Check if selected model is Imagen (always generate image) OR message requests image generation
-      const lowerMessage = message.toLowerCase();
-      const isImageRequest = isImagenModel(selectedModel) ||
-                            lowerMessage.includes('generate an image') || 
-                            lowerMessage.includes('create an image') ||
-                            lowerMessage.includes('generate image') ||
-                            lowerMessage.startsWith('image:');
-
-      if (isImageRequest) {
-        // Extract prompt from message
-        const prompt = message.replace(/^(generate an image|create an image|generate image|image:)\s*/i, '').trim() || message;
-        
-        // Add user message immediately to UI
-        const userMessage = {
-          id: `temp-${Date.now()}`,
-          role: 'user',
-          content: message,
-          model: selectedModel,
-          timestamp: Date.now()
-        };
-
-        set(state => ({
-          messages: [...state.messages, userMessage]
-        }));
-
-        // Save user message to Firestore
-        try {
-          await get().saveMessageToFirestore('user', message, selectedModel);
-        } catch (firestoreError) {
-          console.warn('[Store] Firestore save failed, continuing with API call:', firestoreError);
-        }
-
-        // Generate image instead of text response
-        await get().generateImage(prompt, selectedModel);
-        return null;
-      }
+      // Resolve model configuration (endpoint, type, googleModel)
+      const config = resolveModelConfig(selectedModel);
+      console.log('[Store] Model config resolved:', config);
 
       // Add user message immediately to UI
       const userMessage = {
@@ -543,6 +569,7 @@ export const useChatStore = create((set, get) => ({
         role: 'user',
         content: message,
         model: selectedModel,
+        messageType: config.type,
         timestamp: Date.now()
       };
 
@@ -552,17 +579,100 @@ export const useChatStore = create((set, get) => ({
 
       // Save user message to Firestore
       try {
-        await get().saveMessageToFirestore('user', message, selectedModel);
+        await get().saveMessageToFirestore('user', message, selectedModel, null, config.type);
       } catch (firestoreError) {
         console.warn('[Store] Firestore save failed, continuing with API call:', firestoreError);
-        // Continue even if Firestore fails
       }
 
-      // Call API with selected model
-      const apiUrl = import.meta.env.VITE_API_URL || '/api/chat';
+      // Route to appropriate handler based on model type
+      if (config.type === 'image') {
+        // Image generation
+        const prompt = message;
+        await get().generateImage(prompt, selectedModel);
+        return null;
+      } else if (config.type === 'vision') {
+        // Vision analysis (requires image input - for now, treat as text)
+        await get().generateVision(message, selectedModel);
+        return null;
+      } else if (config.type === 'audio') {
+        // Audio processing
+        await get().generateAudio(message, selectedModel);
+        return null;
+      } else {
+        // Text generation (default)
+        const apiUrl = import.meta.env.VITE_API_URL || config.endpoint;
+        
+        console.log('[Store] Calling API:', apiUrl);
+        console.log('[Store] Request body:', { message, model: config.googleModel });
+
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: message,
+            model: config.googleModel
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          let errorData;
+          try {
+            errorData = JSON.parse(errorText);
+          } catch {
+            errorData = { error: errorText || `HTTP ${response.status}` };
+          }
+          throw new Error(errorData.error || errorData.message || `API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('[Store] API response received:', data);
+
+        // Add assistant message to UI
+        const assistantMessage = {
+          id: `temp-${Date.now() + 1}`,
+          role: 'assistant',
+          content: data.reply || 'No response generated',
+          model: selectedModel,
+          messageType: 'text',
+          timestamp: Date.now()
+        };
+
+        set(state => ({
+          messages: [...state.messages, assistantMessage]
+        }));
+
+        // Save assistant message to Firestore
+        try {
+          await get().saveMessageToFirestore('assistant', data.reply || 'No response generated', selectedModel, null, 'text');
+        } catch (firestoreError) {
+          console.warn('[Store] Firestore save failed for assistant message:', firestoreError);
+        }
+
+        return data.reply;
+      }
+    } catch (error) {
+      console.error('[Store] Error sending message:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Generate vision analysis
+   */
+  generateVision: async (message, model = null) => {
+    const { selectedModel } = get();
+    const modelToUse = model || selectedModel;
+    const config = resolveModelConfig(modelToUse);
+    const tempMessageId = `temp-${Date.now()}`;
+    
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || config.endpoint;
       
-      console.log('[Store] Calling API:', apiUrl);
-      console.log('[Store] Request body:', { message, model: selectedModel });
+      console.log('[Store] Calling vision API:', apiUrl);
+      console.log('[Store] Request body:', { message, model: config.googleModel });
 
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -571,7 +681,7 @@ export const useChatStore = create((set, get) => ({
         },
         body: JSON.stringify({
           message: message,
-          model: selectedModel
+          model: config.googleModel
         }),
       });
 
@@ -587,14 +697,15 @@ export const useChatStore = create((set, get) => ({
       }
 
       const data = await response.json();
-      console.log('[Store] API response received:', data);
+      console.log('[Store] Vision response received');
 
       // Add assistant message to UI
       const assistantMessage = {
-        id: `temp-${Date.now() + 1}`,
+        id: tempMessageId,
         role: 'assistant',
-        content: data.reply || 'No response generated',
-        model: selectedModel,
+        content: data.analysis || 'No analysis generated',
+        model: modelToUse,
+        messageType: 'vision',
         timestamp: Date.now()
       };
 
@@ -602,17 +713,99 @@ export const useChatStore = create((set, get) => ({
         messages: [...state.messages, assistantMessage]
       }));
 
-      // Save assistant message to Firestore
+      // Save to Firestore
       try {
-        await get().saveMessageToFirestore('assistant', data.reply || 'No response generated', selectedModel);
+        await get().saveMessageToFirestore('assistant', data.analysis || '', modelToUse, null, 'vision');
       } catch (firestoreError) {
-        console.warn('[Store] Firestore save failed for assistant message:', firestoreError);
-        // Continue even if Firestore fails
+        console.warn('[Store] Firestore save failed for vision message:', firestoreError);
+        set(state => ({
+          messages: state.messages.filter(msg => msg.id !== tempMessageId)
+        }));
+        throw new Error('Failed to save vision message to Firestore');
       }
 
-      return data.reply;
+      return data.analysis;
     } catch (error) {
-      console.error('[Store] Error sending message:', error);
+      console.error('[Store] Error generating vision:', error);
+      set(state => ({
+        messages: state.messages.filter(msg => msg.id !== tempMessageId)
+      }));
+      throw error;
+    }
+  },
+
+  /**
+   * Generate audio response
+   */
+  generateAudio: async (message, model = null) => {
+    const { selectedModel } = get();
+    const modelToUse = model || selectedModel;
+    const config = resolveModelConfig(modelToUse);
+    const tempMessageId = `temp-${Date.now()}`;
+    
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL || config.endpoint;
+      
+      console.log('[Store] Calling audio API:', apiUrl);
+      console.log('[Store] Request body:', { message, model: config.googleModel });
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: message,
+          model: config.googleModel
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText || `HTTP ${response.status}` };
+        }
+        throw new Error(errorData.error || errorData.message || `API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('[Store] Audio response received');
+
+      // Add assistant message to UI
+      const assistantMessage = {
+        id: tempMessageId,
+        role: 'assistant',
+        content: data.transcript || 'No transcript generated',
+        model: modelToUse,
+        messageType: 'audio',
+        audioUrl: data.audioUrl || null,
+        timestamp: Date.now()
+      };
+
+      set(state => ({
+        messages: [...state.messages, assistantMessage]
+      }));
+
+      // Save to Firestore
+      try {
+        await get().saveMessageToFirestore('assistant', data.transcript || '', modelToUse, null, 'audio', data.audioUrl);
+      } catch (firestoreError) {
+        console.warn('[Store] Firestore save failed for audio message:', firestoreError);
+        set(state => ({
+          messages: state.messages.filter(msg => msg.id !== tempMessageId)
+        }));
+        throw new Error('Failed to save audio message to Firestore');
+      }
+
+      return data.transcript;
+    } catch (error) {
+      console.error('[Store] Error generating audio:', error);
+      set(state => ({
+        messages: state.messages.filter(msg => msg.id !== tempMessageId)
+      }));
       throw error;
     }
   },

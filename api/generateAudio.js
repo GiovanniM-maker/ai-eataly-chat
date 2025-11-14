@@ -110,26 +110,38 @@ const getAccessToken = async () => {
 };
 
 /**
- * Call Google Gemini API
- * Uses v1 API for gemini-2.5-flash
+ * Call Google Gemini Audio API
  */
-const callGeminiAPI = async (model, message) => {
+const callGeminiAudioAPI = async (model, message, audioData = null) => {
   const accessToken = await getAccessToken();
-  
-  // Gemini 2.x models use v1 API
   const apiVersion = "v1";
   const endpoint = `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent`;
   
-  console.log("[API] Using model:", model);
+  console.log("[API] Audio API call:", { model, messageLength: message?.length || 0, hasAudio: !!audioData });
   console.log("[API] Endpoint:", endpoint);
 
-  const requestBody = {
-    contents: [
-      {
-        role: 'user',
-        parts: [{ text: message }]
+  const contents = [{
+    role: 'user',
+    parts: []
+  }];
+
+  // Add text if provided
+  if (message) {
+    contents[0].parts.push({ text: message });
+  }
+
+  // Add audio if provided (base64)
+  if (audioData) {
+    contents[0].parts.push({
+      inline_data: {
+        mime_type: audioData.mimeType || 'audio/mpeg',
+        data: audioData.data
       }
-    ],
+    });
+  }
+
+  const requestBody = {
+    contents,
     generationConfig: {
       temperature: 0.7,
       topP: 0.9,
@@ -152,7 +164,8 @@ const callGeminiAPI = async (model, message) => {
   }
 
   const data = await response.json();
-  console.log("[API] Gemini response OK");
+  console.log("[API] Audio response OK");
+  
   return data;
 };
 
@@ -184,46 +197,43 @@ export default async function handler(req, res) {
   }
 
   try {
-    console.log('[API] Incoming request', {
+    console.log('[API] Incoming audio request', {
       method: req.method,
       origin: req.headers.origin,
       url: req.url
     });
 
-    const { message, model: requestedModel } = req.body;
+    const { message, model: requestedModel, audioData } = req.body;
 
-    // Validate required fields
-    if (!message || typeof message !== 'string') {
-      return res.status(400).json({ error: 'Missing or invalid "message" field' });
-    }
-
-    // Use gemini-2.5-flash as default
-    const model = requestedModel || "gemini-2.5-flash";
-    
-    // Validate that model is a text model (not image/vision/audio)
-    const textModels = [
-      'gemini-2.5-pro',
-      'gemini-2.5-flash',
-      'gemini-2.5-flash-lite',
-      'gemini-1.5-pro',
-      'gemini-1.5-flash'
+    // Validate that model is an audio model
+    const audioModels = [
+      'gemini-2.5-flash-audio',
+      'gemini-1.5-flash-audio'
     ];
     
-    if (!textModels.includes(model.toLowerCase())) {
+    const model = requestedModel || 'gemini-2.5-flash-audio';
+    
+    if (!audioModels.includes(model.toLowerCase())) {
       return res.status(400).json({ 
-        error: `Wrong endpoint: model "${model}" is not a text model. Use /api/generateImage, /api/generateVision, or /api/generateAudio instead.` 
+        error: `Wrong endpoint: model "${model}" is not an audio model. Use /api/chat, /api/generateImage, or /api/generateVision instead.` 
       });
     }
 
-    // Call Gemini API
-    console.log('[API] Calling Gemini API:', { model, messageLength: message.length });
-    const result = await callGeminiAPI(model, message);
+    // Call Gemini Audio API
+    console.log('[API] Calling Gemini Audio API:', { model, messageLength: message?.length || 0 });
+    const result = await callGeminiAudioAPI(model, message, audioData);
 
-    // Extract reply from response
-    const reply = result.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated';
+    // Extract transcript/response from response
+    const transcript = result.candidates?.[0]?.content?.parts?.[0]?.text || 'No transcript generated';
+    
+    // Check if response contains audio
+    const audioPart = result.candidates?.[0]?.content?.parts?.find(part => part.inlineData);
+    const audioUrl = audioPart?.inlineData?.data ? `data:${audioPart.inlineData.mimeType};base64,${audioPart.inlineData.data}` : null;
 
     return res.status(200).json({
-      reply,
+      transcript,
+      audioUrl,
+      model
     });
   } catch (error) {
     console.error('[API] ERROR:', error);
@@ -233,3 +243,4 @@ export default async function handler(req, res) {
     });
   }
 }
+
