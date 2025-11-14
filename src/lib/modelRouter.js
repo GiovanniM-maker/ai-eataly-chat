@@ -16,37 +16,20 @@ export function resolveModelConfig(modelName) {
   const normalizedModel = modelName.toLowerCase().trim();
 
   // Model definitions with provider routing
+  // ONLY 2 MODELS SUPPORTED
   const models = {
     // Text model - Google REST API
-    'gemini-2.5-flash': {
-      name: 'gemini-2.5-flash',
+    'gemini-2.5-flash-preview-09-2025': {
+      name: 'gemini-2.5-flash-preview-09-2025',
       type: 'text',
       provider: 'google-text',
       endpoint: '/api/chat',
-      googleModel: 'gemini-2.5-flash'
-    },
-    
-    // Image model - Vertex AI Imagen
-    'imagen-4': {
-      name: 'imagen-4',
-      type: 'image',
-      provider: 'imagen',
-      endpoint: '/api/generateImage',
-      googleModel: 'imagen-4'
+      googleModel: 'gemini-2.5-flash-preview-09-2025'
     },
     
     // Image model - Vertex AI Gemini (Nanobanana)
     'gemini-2.5-flash-image': {
       name: 'gemini-2.5-flash-image',
-      type: 'image',
-      provider: 'nanobanana',
-      endpoint: '/api/generateNanobananaImage',
-      googleModel: 'gemini-2.5-flash-image'
-    },
-    
-    // Multimodal model - Vertex AI Gemini (Nanobanana Multimodal)
-    'gemini-2.5-nano-banana': {
-      name: 'gemini-2.5-nano-banana',
       type: 'image',
       provider: 'nanobanana',
       endpoint: '/api/generateNanobananaImage',
@@ -57,8 +40,8 @@ export function resolveModelConfig(modelName) {
   const config = models[normalizedModel];
   
   if (!config) {
-    console.warn(`[ModelRouter] Unknown model "${modelName}", defaulting to gemini-2.5-flash`);
-    return models['gemini-2.5-flash'];
+    console.warn(`[ModelRouter] Unknown model "${modelName}", defaulting to gemini-2.5-flash-preview-09-2025`);
+    return models['gemini-2.5-flash-preview-09-2025'];
   }
 
   return {

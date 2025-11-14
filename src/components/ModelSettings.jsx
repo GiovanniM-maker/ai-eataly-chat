@@ -1,17 +1,50 @@
 import { useState, useEffect } from 'react';
 import { useChatStore } from '../store/chatStore';
 import { ALL_MODELS, getModelDisplayName } from '../constants/models';
+import { 
+  getModelCapabilities, 
+  modelSupportsOption, 
+  getOptionValues 
+} from '../lib/modelCapabilities';
+import { HelpCircle } from 'lucide-react';
 
 /**
- * Model Settings Panel - Full configuration UI for all models
+ * Tooltip component
+ */
+const Tooltip = ({ text, children }) => {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative inline-block">
+      <div
+        onMouseEnter={() => setShow(true)}
+        onMouseLeave={() => setShow(false)}
+        className="cursor-help"
+      >
+        {children}
+      </div>
+      {show && (
+        <div className="absolute z-50 bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-800 text-white text-xs rounded-lg shadow-lg max-w-xs">
+          {text}
+          <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-800"></div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/**
+ * Model Settings Panel - Dynamic configuration UI based on model capabilities
  */
 const ModelSettings = ({ isOpen, onClose }) => {
-  const { modelConfigs, loadModelConfig, saveModelConfig, loadAllModelConfigs, debugMode, setDebugMode } = useChatStore();
+  const { modelConfigs, loadModelConfig, saveModelConfig, loadAllModelConfigs, debugMode, setDebugMode, userId } = useChatStore();
   const [selectedModel, setSelectedModel] = useState(ALL_MODELS[0]);
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+
+  // Get capabilities for selected model
+  const capabilities = getModelCapabilities(selectedModel);
 
   // Load all configs on mount
   useEffect(() => {
@@ -72,20 +105,13 @@ const ModelSettings = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
-  const aspectRatios = [
-    { value: '1:1', label: '1:1 (Square)' },
-    { value: '16:9', label: '16:9 (Landscape)' },
-    { value: '9:16', label: '9:16 (Portrait)' },
-    { value: '3:2', label: '3:2 (Landscape)' },
-    { value: '4:3', label: '4:3 (Landscape)' },
-    { value: '21:9', label: '21:9 (Ultrawide)' }
-  ];
-
-  const outputTypes = [
-    { value: 'TEXT', label: 'Text Only' },
-    { value: 'IMAGE', label: 'Image Only' },
-    { value: 'TEXT+IMAGE', label: 'Text + Image' }
-  ];
+  // Render field only if model supports it
+  const renderField = (optionKey, renderFn) => {
+    if (!capabilities || !modelSupportsOption(selectedModel, optionKey)) {
+      return null;
+    }
+    return renderFn();
+  };
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -129,172 +155,295 @@ const ModelSettings = ({ isOpen, onClose }) => {
                 </select>
               </div>
 
-              {/* Display Name */}
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Display Name
-                </label>
-                <input
-                  type="text"
-                  value={config.displayName}
-                  onChange={(e) => handleConfigChange('displayName', e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Description
-                </label>
-                <textarea
-                  value={config.description}
-                  onChange={(e) => handleConfigChange('description', e.target.value)}
-                  rows={2}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-                />
-              </div>
-
-              {/* System Prompt */}
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  System Prompt
-                </label>
-                <textarea
-                  value={config.systemPrompt}
-                  onChange={(e) => handleConfigChange('systemPrompt', e.target.value)}
-                  rows={4}
-                  placeholder="Enter system instructions..."
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none font-mono text-sm"
-                />
-              </div>
-
-              {/* Temperature */}
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Temperature: {config.temperature}
-                </label>
-                <input
-                  type="range"
-                  min="0"
-                  max="2"
-                  step="0.1"
-                  value={config.temperature}
-                  onChange={(e) => handleConfigChange('temperature', parseFloat(e.target.value))}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <span>0 (Deterministic)</span>
-                  <span>1 (Balanced)</span>
-                  <span>2 (Creative)</span>
-                </div>
-              </div>
-
-              {/* Top P */}
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Top P: {config.topP}
-                </label>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.05"
-                  value={config.topP}
-                  onChange={(e) => handleConfigChange('topP', parseFloat(e.target.value))}
-                  className="w-full"
-                />
-                <div className="flex justify-between text-xs text-gray-400 mt-1">
-                  <span>0 (Focused)</span>
-                  <span>1 (Diverse)</span>
-                </div>
-              </div>
-
-              {/* Max Output Tokens */}
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Max Output Tokens
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="32768"
-                  value={config.maxOutputTokens}
-                  onChange={(e) => handleConfigChange('maxOutputTokens', parseInt(e.target.value))}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Output Type (for image models) */}
-              {(selectedModel.includes('image') || selectedModel.includes('imagen') || selectedModel.includes('nanobanana')) && (
+              {/* System Instruction */}
+              {renderField('systemInstruction', () => (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Output Type
+                  <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                    System Instruction
+                    <Tooltip text="Instructions that guide the model's behavior and responses">
+                      <HelpCircle className="w-4 h-4 text-gray-400" />
+                    </Tooltip>
                   </label>
-                  <select
-                    value={config.outputType}
-                    onChange={(e) => handleConfigChange('outputType', e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {outputTypes.map(type => (
-                      <option key={type.value} value={type.value}>
-                        {type.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Aspect Ratio (for image models) */}
-              {(selectedModel.includes('image') || selectedModel.includes('imagen')) && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Aspect Ratio
-                  </label>
-                  <select
-                    value={config.aspectRatio}
-                    onChange={(e) => handleConfigChange('aspectRatio', e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {aspectRatios.map(ratio => (
-                      <option key={ratio.value} value={ratio.value}>
-                        {ratio.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Sample Count (for image models) */}
-              {(selectedModel.includes('image') || selectedModel.includes('imagen')) && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Sample Count
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="4"
-                    value={config.sampleCount}
-                    onChange={(e) => handleConfigChange('sampleCount', parseInt(e.target.value))}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  <textarea
+                    value={config.systemPrompt || ''}
+                    onChange={(e) => handleConfigChange('systemPrompt', e.target.value)}
+                    rows={4}
+                    placeholder="Enter system instructions..."
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none font-mono text-sm"
                   />
                 </div>
-              )}
+              ))}
 
-              {/* Enabled Toggle */}
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id="enabled"
-                  checked={config.enabled}
-                  onChange={(e) => handleConfigChange('enabled', e.target.checked)}
-                  className="w-4 h-4 text-blue-600 bg-gray-800 border-gray-700 rounded focus:ring-blue-500"
-                />
-                <label htmlFor="enabled" className="text-sm font-medium text-gray-300">
-                  Model Enabled
-                </label>
-              </div>
+              {/* Temperature */}
+              {renderField('temperature', () => (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                    Temperature: {config.temperature ?? 0.7}
+                    <Tooltip text="Controls randomness. Lower = more deterministic, Higher = more creative">
+                      <HelpCircle className="w-4 h-4 text-gray-400" />
+                    </Tooltip>
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={config.temperature ?? 0.7}
+                    onChange={(e) => handleConfigChange('temperature', parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-gray-400 mt-1">
+                    <span>0 (Deterministic)</span>
+                    <span>1 (Balanced)</span>
+                    <span>2 (Creative)</span>
+                  </div>
+                </div>
+              ))}
+
+              {/* Top P */}
+              {renderField('topP', () => (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                    Top P: {config.topP ?? 0.95}
+                    <Tooltip text="Nucleus sampling: considers tokens with top-p probability mass">
+                      <HelpCircle className="w-4 h-4 text-gray-400" />
+                    </Tooltip>
+                  </label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={config.topP ?? 0.95}
+                    onChange={(e) => handleConfigChange('topP', parseFloat(e.target.value))}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-gray-400 mt-1">
+                    <span>0 (Focused)</span>
+                    <span>1 (Diverse)</span>
+                  </div>
+                </div>
+              ))}
+
+              {/* Max Tokens - Only show if outputType is not "image" for nanobanana */}
+              {renderField('maxTokens', () => {
+                // For nanobanana, only show if outputType is "image_and_text"
+                if (selectedModel === 'gemini-2.5-flash-image') {
+                  const outputType = config.outputType || 'image';
+                  if (outputType === 'image') {
+                    return null; // Don't show maxTokens for image-only mode
+                  }
+                }
+                return (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                      Max Output Tokens
+                      <Tooltip text="Maximum number of tokens to generate in the response">
+                        <HelpCircle className="w-4 h-4 text-gray-400" />
+                      </Tooltip>
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="32768"
+                      value={config.maxOutputTokens ?? 8192}
+                      onChange={(e) => handleConfigChange('maxOutputTokens', parseInt(e.target.value))}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                );
+              })}
+
+              {/* Output Type (for nanobanana) */}
+              {renderField('outputType', () => {
+                const values = getOptionValues(selectedModel, 'outputType');
+                return (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                      Output Type
+                      <Tooltip text="Type of output: image only or image with text">
+                        <HelpCircle className="w-4 h-4 text-gray-400" />
+                      </Tooltip>
+                    </label>
+                    <select
+                      value={config.outputType || 'image'}
+                      onChange={(e) => handleConfigChange('outputType', e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {values.map(value => (
+                        <option key={value} value={value}>
+                          {value === 'image' ? 'Image Only' : 'Image + Text'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+
+              {/* Image Format / Aspect Ratio (for nanobanana) */}
+              {renderField('imageFormat', () => {
+                const values = getOptionValues(selectedModel, 'imageFormat');
+                return (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                      Aspect Ratio
+                      <Tooltip text="Aspect ratio for generated images">
+                        <HelpCircle className="w-4 h-4 text-gray-400" />
+                      </Tooltip>
+                    </label>
+                    <select
+                      value={config.aspectRatio || '1:1'}
+                      onChange={(e) => handleConfigChange('aspectRatio', e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {values.map(value => (
+                        <option key={value} value={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+
+              {/* Thought Budget (for text model) */}
+              {renderField('thoughtBudget', () => {
+                const values = getOptionValues(selectedModel, 'thoughtBudget');
+                return (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                      Thought Budget
+                      <Tooltip text="Controls reasoning depth: auto, manual, or off">
+                        <HelpCircle className="w-4 h-4 text-gray-400" />
+                      </Tooltip>
+                    </label>
+                    <select
+                      value={config.thoughtBudget || 'auto'}
+                      onChange={(e) => handleConfigChange('thoughtBudget', e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      {values.map(value => (
+                        <option key={value} value={value}>
+                          {value.charAt(0).toUpperCase() + value.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+
+              {/* Grounding Google */}
+              {renderField('groundingGoogle', () => (
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="groundingGoogle"
+                    checked={config.groundingGoogle || false}
+                    onChange={(e) => handleConfigChange('groundingGoogle', e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-gray-800 border-gray-700 rounded focus:ring-blue-500"
+                  />
+                  <label htmlFor="groundingGoogle" className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                    Grounding (Google Search)
+                    <Tooltip text="Enable Google Search grounding for real-time information">
+                      <HelpCircle className="w-4 h-4 text-gray-400" />
+                    </Tooltip>
+                  </label>
+                </div>
+              ))}
+
+              {/* Grounding Your Data */}
+              {renderField('groundingYourData', () => (
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="groundingYourData"
+                    checked={config.groundingYourData || false}
+                    onChange={(e) => handleConfigChange('groundingYourData', e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-gray-800 border-gray-700 rounded focus:ring-blue-500"
+                  />
+                  <label htmlFor="groundingYourData" className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                    Grounding (Your Data)
+                    <Tooltip text="Enable grounding with your own data sources">
+                      <HelpCircle className="w-4 h-4 text-gray-400" />
+                    </Tooltip>
+                  </label>
+                </div>
+              ))}
+
+              {/* Structured Output */}
+              {renderField('structuredOutput', () => (
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="structuredOutput"
+                    checked={config.structuredOutput || false}
+                    onChange={(e) => handleConfigChange('structuredOutput', e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-gray-800 border-gray-700 rounded focus:ring-blue-500"
+                  />
+                  <label htmlFor="structuredOutput" className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                    Structured Output
+                    <Tooltip text="Enable structured output format (JSON Schema)">
+                      <HelpCircle className="w-4 h-4 text-gray-400" />
+                    </Tooltip>
+                  </label>
+                </div>
+              ))}
+
+              {/* Streaming */}
+              {renderField('streaming', () => (
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="streaming"
+                    checked={config.streaming !== false}
+                    onChange={(e) => handleConfigChange('streaming', e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-gray-800 border-gray-700 rounded focus:ring-blue-500"
+                  />
+                  <label htmlFor="streaming" className="text-sm font-medium text-gray-300 flex items-center gap-2">
+                    Streaming
+                    <Tooltip text="Enable streaming responses for real-time output">
+                      <HelpCircle className="w-4 h-4 text-gray-400" />
+                    </Tooltip>
+                  </label>
+                </div>
+              ))}
+
+              {/* Safety Settings */}
+              {renderField('safetySettings', () => (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                    Safety Settings
+                    <Tooltip text="Configure content safety filters">
+                      <HelpCircle className="w-4 h-4 text-gray-400" />
+                    </Tooltip>
+                  </label>
+                  <div className="bg-gray-800 border border-gray-700 rounded-lg p-4 space-y-2">
+                    <p className="text-xs text-gray-400">Safety settings configuration coming soon</p>
+                  </div>
+                </div>
+              ))}
+
+              {/* Region */}
+              {renderField('region', () => (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2 flex items-center gap-2">
+                    Region
+                    <Tooltip text="Select the region for API calls">
+                      <HelpCircle className="w-4 h-4 text-gray-400" />
+                    </Tooltip>
+                  </label>
+                  <select
+                    value={config.region || 'us-central1'}
+                    onChange={(e) => handleConfigChange('region', e.target.value)}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="us-central1">US Central 1</option>
+                    <option value="us-east1">US East 1</option>
+                    <option value="europe-west1">Europe West 1</option>
+                    <option value="asia-southeast1">Asia Southeast 1</option>
+                  </select>
+                </div>
+              ))}
 
               {/* DEBUG MODE Toggle */}
               <div className="border-t border-gray-800 pt-4 mt-4">
@@ -351,4 +500,3 @@ const ModelSettings = ({ isOpen, onClose }) => {
 };
 
 export default ModelSettings;
-

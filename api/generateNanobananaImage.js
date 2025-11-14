@@ -230,16 +230,26 @@ const callNanobananaAPI = async (prompt, modelConfig = null, modelSettings = nul
 
   // Add response modalities based on outputType (priority: modelSettings > Firestore config)
   // Determine outputType once (with fallback)
-  const outputType = output_type ?? modelConfig?.outputType ?? 'IMAGE';
-  const normalizedOutputType = outputType.toUpperCase();
+  const outputType = output_type ?? modelConfig?.outputType ?? 'image';
+  const normalizedOutputType = outputType.toLowerCase();
   
-  if (normalizedOutputType === 'TEXT+IMAGE' || normalizedOutputType === 'BOTH') {
+  // Map outputType to responseModalities
+  if (normalizedOutputType === 'image_and_text') {
     body.generationConfig.responseModalities = ['TEXT', 'IMAGE'];
-  } else if (normalizedOutputType === 'TEXT') {
-    body.generationConfig.responseModalities = ['TEXT'];
   } else {
+    // Default to IMAGE only
     body.generationConfig.responseModalities = ['IMAGE'];
   }
+  
+  // For nanobanana: maxTokens ONLY if outputType is "image_and_text"
+  if (normalizedOutputType === 'image_and_text') {
+    if (max_output_tokens !== undefined) {
+      body.generationConfig.maxOutputTokens = max_output_tokens;
+    } else if (modelConfig?.maxOutputTokens !== undefined) {
+      body.generationConfig.maxOutputTokens = modelConfig.maxOutputTokens;
+    }
+  }
+  // If outputType is "image", do NOT include maxTokens
 
   if (DEBUG_MODE) {
     console.log("[DEBUG] ============ PAYLOAD =============");
@@ -287,15 +297,11 @@ const callNanobananaAPI = async (prompt, modelConfig = null, modelSettings = nul
     console.log("[DEBUG] Image base64 length:", imageBase64?.length || 0);
   }
 
-  if (normalizedOutputType === 'TEXT+IMAGE' || normalizedOutputType === 'BOTH') {
+  // Handle response based on outputType
+  if (normalizedOutputType === 'image_and_text') {
     return { text, imageBase64, rawResponse: DEBUG_MODE ? data : undefined };
-  } else if (normalizedOutputType === 'TEXT') {
-    if (!text) {
-      throw new Error('No text data found in Nanobanana API response');
-    }
-    return { text, imageBase64: null, rawResponse: DEBUG_MODE ? data : undefined };
   } else {
-    // IMAGE mode
+    // IMAGE mode (default)
     if (!imageBase64) {
       console.error("[API:NANOBANANA] ========================================");
       console.error("[API:NANOBANANA] ❌ FAILED TO EXTRACT IMAGE");
@@ -353,13 +359,12 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing or invalid "prompt" field' });
     }
 
-    // Allow gemini-2.5-flash-image and gemini-2.5-nano-banana
+    // ONLY allow gemini-2.5-flash-image
     const modelToUse = model || "gemini-2.5-flash-image";
-    const allowedModels = ['gemini-2.5-flash-image', 'gemini-2.5-nano-banana'];
     
-    if (!allowedModels.includes(modelToUse.toLowerCase())) {
+    if (modelToUse.toLowerCase() !== 'gemini-2.5-flash-image') {
       return res.status(400).json({ 
-        error: `Wrong endpoint: model "${modelToUse}" is not supported. This endpoint accepts "gemini-2.5-flash-image" or "gemini-2.5-nano-banana". Use /api/chat for Gemini 2.5 Flash or /api/generateImage for Imagen 4.` 
+        error: `Wrong endpoint: model "${modelToUse}" is not supported. This endpoint only accepts "gemini-2.5-flash-image". Use /api/chat for gemini-2.5-flash-preview-09-2025.` 
       });
     }
 
@@ -375,8 +380,15 @@ export default async function handler(req, res) {
     }
 
     // Determine output type (priority: modelSettings > Firestore config, with fallback)
-    const outputType = modelSettings?.output_type ?? modelConfig?.outputType ?? 'IMAGE';
-    const normalizedOutputType = outputType.toUpperCase();
+    const outputType = modelSettings?.output_type ?? modelConfig?.outputType ?? 'image';
+    const normalizedOutputType = outputType.toLowerCase();
+    
+    // Log payload building
+    console.log(`[MODEL] Payload built for ${modelToUse}`);
+    console.log(`[MODEL] Output type: ${normalizedOutputType}`);
+    if (DEBUG_MODE) {
+      console.log(`[MODEL] Applying merged config:`, modelSettings);
+    }
 
     // Generate via Vertex AI generateContent (NOT streaming)
     console.log('[API:NANOBANANA] Calling Nanobanana API:', { prompt, model: modelToUse, outputType: normalizedOutputType });
@@ -385,15 +397,12 @@ export default async function handler(req, res) {
     // Build response
     const responseData = {};
     
-    if (normalizedOutputType === 'TEXT+IMAGE' || normalizedOutputType === 'BOTH') {
+    if (normalizedOutputType === 'image_and_text') {
       responseData.text = result.text;
       responseData.image = result.imageBase64;
       responseData.imageBase64 = result.imageBase64; // Backward compatibility
-    } else if (normalizedOutputType === 'TEXT') {
-      responseData.text = result.text;
-      responseData.reply = result.text; // For compatibility
     } else {
-      // IMAGE mode
+      // IMAGE mode (default)
       if (!result.imageBase64) {
         return res.status(500).json({ error: 'Failed to generate image' });
       }

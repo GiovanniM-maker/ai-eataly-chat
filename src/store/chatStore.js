@@ -21,9 +21,10 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { db, app } from '../config/firebase';
-import { DEFAULT_MODEL, isImagenModel } from '../constants/models';
+import { DEFAULT_MODEL } from '../constants/models';
 import { resolveModelConfig } from '../lib/modelRouter';
 import { loadPipelineConfig as loadChatPipelineConfig, savePipelineConfig as saveChatPipelineConfig } from '../lib/pipelineConfig';
+import { modelSupportsOption } from '../lib/modelCapabilities';
 
 /**
  * Get or create user ID from localStorage
@@ -92,6 +93,7 @@ export const useChatStore = create((set, get) => ({
   unsubscribe: null,
   loading: false,
   selectedModel: DEFAULT_MODEL,
+  userId: getUserId(), // User ID for Firestore paths
   
   /**
    * Set selected model
@@ -1448,17 +1450,18 @@ export const useChatStore = create((set, get) => ({
 
   /**
    * Load model configuration from Firestore
+   * Path: users/{uid}/modelSettings/{modelId}
    */
   loadModelConfig: async (modelId) => {
     try {
       // Check cache first
-      const { modelConfigs } = get();
+      const { modelConfigs, userId } = get();
       if (modelConfigs[modelId]) {
         return modelConfigs[modelId];
       }
 
       console.log('[Store] Loading model config for:', modelId);
-      const configRef = doc(db, 'modelConfigs', modelId);
+      const configRef = doc(db, 'users', userId, 'modelSettings', modelId);
       const configSnap = await getDoc(configRef);
 
       if (configSnap.exists()) {
@@ -1536,11 +1539,13 @@ export const useChatStore = create((set, get) => ({
 
   /**
    * Save model configuration to Firestore
+   * Path: users/{uid}/modelSettings/{modelId}
    */
   saveModelConfig: async (config) => {
     try {
+      const { userId } = get();
       console.log('[Store] Saving model config for:', config.modelId);
-      const configRef = doc(db, 'modelConfigs', config.modelId);
+      const configRef = doc(db, 'users', userId, 'modelSettings', config.modelId);
       
       const configData = {
         ...config,
@@ -1573,6 +1578,7 @@ export const useChatStore = create((set, get) => ({
 
   /**
    * Build modelSettings object from current model config
+   * Only includes fields supported by the model (based on capabilities)
    */
   buildModelSettings: (modelId) => {
     const { modelConfigs } = get();
@@ -1583,51 +1589,86 @@ export const useChatStore = create((set, get) => ({
     }
     
     const modelSettings = {};
+    const ignoredFields = [];
     
-    if (config.systemPrompt) {
+    // System Instruction
+    if (modelSupportsOption(modelId, 'systemInstruction') && config.systemPrompt) {
       modelSettings.system = config.systemPrompt;
+    } else if (config.systemPrompt) {
+      ignoredFields.push('systemInstruction');
     }
     
-    if (config.temperature !== undefined) {
+    // Temperature
+    if (modelSupportsOption(modelId, 'temperature') && config.temperature !== undefined) {
       modelSettings.temperature = config.temperature;
+    } else if (config.temperature !== undefined) {
+      ignoredFields.push('temperature');
     }
     
-    if (config.topP !== undefined) {
+    // Top P
+    if (modelSupportsOption(modelId, 'topP') && config.topP !== undefined) {
       modelSettings.top_p = config.topP;
+    } else if (config.topP !== undefined) {
+      ignoredFields.push('topP');
     }
     
-    if (config.maxOutputTokens !== undefined) {
-      modelSettings.max_output_tokens = config.maxOutputTokens;
+    // Max Tokens - Special handling for nanobanana
+    if (modelSupportsOption(modelId, 'maxTokens')) {
+      // For nanobanana, only include maxTokens if outputType is "image_and_text"
+      if (modelId === 'gemini-2.5-flash-image') {
+        const outputType = config.outputType || 'image';
+        if (outputType === 'image_and_text' && config.maxOutputTokens !== undefined) {
+          modelSettings.max_output_tokens = config.maxOutputTokens;
+        }
+      } else {
+        // For text models, always include if defined
+        if (config.maxOutputTokens !== undefined) {
+          modelSettings.max_output_tokens = config.maxOutputTokens;
+        }
+      }
+    } else if (config.maxOutputTokens !== undefined) {
+      ignoredFields.push('maxTokens');
     }
     
-    // For image models
-    if (config.aspectRatio) {
-      modelSettings.aspect_ratio = config.aspectRatio;
-    }
-    
-    // For Nanobanana
-    // Use nullish coalescing for safe fallback
-    const outputType = config.outputType ?? 'TEXT';
-    if (outputType) {
-      // Map Firestore outputType to API format
+    // Output Type (for nanobanana)
+    if (modelSupportsOption(modelId, 'outputType') && config.outputType) {
+      // Map to API format
       const outputTypeMap = {
-        'TEXT': 'text',
-        'IMAGE': 'image',
-        'TEXT+IMAGE': 'both'
+        'image': 'image',
+        'image_and_text': 'image_and_text'
       };
-      modelSettings.output_type = outputTypeMap[outputType] || outputType.toLowerCase();
+      const mapped = outputTypeMap[config.outputType] || config.outputType.toLowerCase();
+      modelSettings.output_type = mapped;
+    } else if (config.outputType) {
+      ignoredFields.push('outputType');
     }
+    
+    // Image Format / Aspect Ratio (for nanobanana)
+    if (modelSupportsOption(modelId, 'imageFormat') && config.aspectRatio) {
+      modelSettings.aspect_ratio = config.aspectRatio;
+    } else if (config.aspectRatio) {
+      ignoredFields.push('imageFormat');
+    }
+    
+    // Log ignored fields
+    if (ignoredFields.length > 0) {
+      console.log(`[MODEL] Ignored unsupported fields for ${modelId}:`, ignoredFields);
+    }
+    
+    console.log(`[MODEL] Applying merged config for ${modelId}:`, modelSettings);
     
     return Object.keys(modelSettings).length > 0 ? modelSettings : null;
   },
 
   /**
    * Load all model configs
+   * Path: users/{uid}/modelSettings
    */
   loadAllModelConfigs: async () => {
     try {
-      console.log('[Store] Loading all model configs');
-      const configsRef = collection(db, 'modelConfigs');
+      const { userId } = get();
+      console.log('[Store] Loading all model configs for user:', userId);
+      const configsRef = collection(db, 'users', userId, 'modelSettings');
       const snapshot = await getDocs(configsRef);
       
       const configs = {};
