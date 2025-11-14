@@ -1052,6 +1052,7 @@ export const useChatStore = create((set, get) => ({
       // 1) Load pipeline config for this chat
       let finalUserMessage = message;
       let pipelineUsed = false;
+      let pipelineModel = null; // Store pipeline model for badge
       
       try {
         const pipeline = await loadChatPipelineConfig(chatId);
@@ -1061,6 +1062,8 @@ export const useChatStore = create((set, get) => ({
           console.log('[PIPELINE] Model used:', pipeline.model);
           console.log('[PIPELINE] System instruction length:', pipeline.systemInstruction.length);
           console.log('[PIPELINE] Preprocessed user input:', message);
+          
+          pipelineModel = pipeline.model; // Store for badge
           
           // Call pre-model API
           const apiUrl = import.meta.env.VITE_API_URL || '/api/chat';
@@ -1203,7 +1206,7 @@ export const useChatStore = create((set, get) => ({
           model: selectedModel,
           messageType: 'text',
           timestamp: Date.now(),
-          preprocessedBy: pipelineUsed ? pipeline.model : null // Track if pre-processed
+          preprocessedBy: pipelineUsed ? pipelineModel : null // Track if pre-processed
         };
 
           set(state => ({
