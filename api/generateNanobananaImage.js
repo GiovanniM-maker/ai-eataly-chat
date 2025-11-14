@@ -105,23 +105,21 @@ const callNanobananaAPI = async (prompt, modelConfig = null, modelSettings = nul
     output_type
   } = modelSettings || {};
 
-  // Build contents array - system message FIRST, then user message
-  const contents = [];
-  
-  // Add system instruction as FIRST message in contents (priority: modelSettings > Firestore config)
+  // Get system instruction (priority: modelSettings > Firestore config)
   const systemPrompt = system || modelConfig?.systemPrompt;
-  if (systemPrompt && systemPrompt.trim() !== "") {
-    contents.push({
-      role: 'system',
-      parts: [{ text: systemPrompt }]
-    });
-  }
   
-  // Add user message
-  contents.push({
-    role: "user",
-    parts: [{ text: prompt }]
-  });
+  // Build system instruction tag (Gemini doesn't support "system" role)
+  const systemTag = systemPrompt && systemPrompt.trim() !== ""
+    ? `<system_instruction>${systemPrompt}</system_instruction>\n`
+    : "";
+
+  // Build contents array - system instructions are prepended to user message
+  const contents = [
+    {
+      role: "user",
+      parts: [{ text: systemTag + prompt }]
+    }
+  ];
 
   // Build request body
   const body = {
@@ -163,7 +161,7 @@ const callNanobananaAPI = async (prompt, modelConfig = null, modelSettings = nul
 
   if (DEBUG_MODE) {
     console.log("[DEBUG] ============ PAYLOAD =============");
-    console.log("Final contents payload:", JSON.stringify(contents, null, 2));
+    console.log("[DEBUG GEMINI PAYLOAD]", JSON.stringify(contents, null, 2));
     console.log(JSON.stringify(body, null, 2));
     console.log("[DEBUG] Output Type:", normalizedOutputType);
   }

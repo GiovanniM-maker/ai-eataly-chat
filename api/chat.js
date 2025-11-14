@@ -137,23 +137,21 @@ const callGeminiAPI = async (model, message, modelConfig = null, modelSettings =
     max_output_tokens
   } = modelSettings || {};
 
-  // Build contents array - system message FIRST, then user message
-  const contents = [];
-  
-  // Add system instruction as FIRST message in contents (priority: modelSettings > Firestore config)
+  // Get system instruction (priority: modelSettings > Firestore config)
   const systemPrompt = system || modelConfig?.systemPrompt;
-  if (systemPrompt && systemPrompt.trim() !== "") {
-    contents.push({
-      role: 'system',
-      parts: [{ text: systemPrompt }]
-    });
-  }
   
-  // Add user message
-  contents.push({
-    role: 'user',
-    parts: [{ text: message }]
-  });
+  // Build system instruction tag (Gemini doesn't support "system" role)
+  const systemTag = systemPrompt && systemPrompt.trim() !== ""
+    ? `<system_instruction>${systemPrompt}</system_instruction>\n`
+    : "";
+
+  // Build contents array - system instructions are prepended to user message
+  const contents = [
+    {
+      role: 'user',
+      parts: [{ text: systemTag + message }]
+    }
+  ];
 
   // Build request body
   const requestBody = {
@@ -182,7 +180,7 @@ const callGeminiAPI = async (model, message, modelConfig = null, modelSettings =
 
   if (DEBUG_MODE) {
     console.log("[DEBUG] ============ PAYLOAD =============");
-    console.log("Final contents payload:", JSON.stringify(contents, null, 2));
+    console.log("[DEBUG GEMINI PAYLOAD]", JSON.stringify(contents, null, 2));
     console.log(JSON.stringify(requestBody, null, 2));
   }
 
