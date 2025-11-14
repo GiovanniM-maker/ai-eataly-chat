@@ -24,9 +24,10 @@ export const useChatStore = create((set, get) => ({
 
       // Call API
       const apiUrl = import.meta.env.VITE_API_URL || '/api/chat';
+      const model = "gemini-2.5-flash";
       
       console.log('[Store] Calling API:', apiUrl);
-      console.log('[Store] Request body:', { message, model: 'gemini-1.5-flash' });
+      console.log('[Store] Request body:', { message, model });
 
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -35,7 +36,7 @@ export const useChatStore = create((set, get) => ({
         },
         body: JSON.stringify({
           message: message,
-          model: 'gemini-1.5-flash'
+          model: model
         }),
       });
 

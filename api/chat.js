@@ -111,15 +111,17 @@ const getAccessToken = async () => {
 
 /**
  * Call Google Gemini API
+ * Uses v1 API for gemini-2.5-flash
  */
 const callGeminiAPI = async (model, message) => {
   const accessToken = await getAccessToken();
   
-  // Determine API version based on model name
-  const apiVersion = model.startsWith("gemini-1.5") ? "v1" : "v1beta";
+  // Gemini 2.x models use v1 API
+  const apiVersion = "v1";
   const endpoint = `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent`;
   
-  console.log("[API] Using API version:", apiVersion);
+  console.log("[API] Using model:", model);
+  console.log("[API] Endpoint:", endpoint);
 
   const requestBody = {
     contents: [
@@ -150,6 +152,7 @@ const callGeminiAPI = async (model, message) => {
   }
 
   const data = await response.json();
+  console.log("[API] Gemini response OK");
   return data;
 };
 
@@ -187,21 +190,19 @@ export default async function handler(req, res) {
       url: req.url
     });
 
-    const { message, model } = req.body;
+    const { message, model: requestedModel } = req.body;
 
     // Validate required fields
     if (!message || typeof message !== 'string') {
       return res.status(400).json({ error: 'Missing or invalid "message" field' });
     }
 
-    if (!model || typeof model !== 'string') {
-      return res.status(400).json({ error: 'Missing or invalid "model" field' });
-    }
+    // Use gemini-2.5-flash as default and only supported model
+    const model = requestedModel || "gemini-2.5-flash";
 
     // Call Gemini API
     console.log('[API] Calling Gemini API:', { model, messageLength: message.length });
     const result = await callGeminiAPI(model, message);
-    console.log('[API] Gemini response received');
 
     // Extract reply from response
     const reply = result.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated';
