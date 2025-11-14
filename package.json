@@ -16,6 +16,7 @@
     "formidable": "^3.5.4",
     "formidable-serverless": "^1.1.1",
     "google-auth-library": "^10.5.0",
+    "lucide-react": "^0.553.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "uuid": "^9.0.1",

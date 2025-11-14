@@ -20,6 +20,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { PlusCircle, Pin, MoreVertical, Edit3, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 
 /**
  * Chat Sidebar Component with CRUD, Pin, and Drag & Drop
@@ -174,36 +175,44 @@ const ChatSidebar = () => {
   const unpinnedChats = chats.filter(c => !c.pinned);
 
   return (
-    <div className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col h-screen">
+    <div 
+      className="w-64 flex flex-col h-screen"
+      style={{
+        background: 'rgba(255,255,255,0.35)',
+        backdropFilter: 'blur(24px)',
+        borderRight: '1px solid rgba(200,200,200,0.25)',
+      }}
+    >
       {/* Header */}
-      <div className="p-4 border-b border-gray-800">
+      <div className="p-4 border-b border-subtle">
         <button
           onClick={handleCreateNewChat}
-          className="w-full flex items-center gap-2 px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-white transition-colors"
+          className="w-full flex items-center gap-2 px-4 py-2.5 bg-bg-surface hover:bg-glass-white-hover rounded-full text-text-main transition-all duration-default shadow-soft hover:shadow-md hover:translate-y-[-1px]"
+          style={{
+            border: '1px solid var(--border-subtle)',
+          }}
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          <span>Nuova Chat</span>
+          <PlusCircle size={18} strokeWidth={1.5} className="text-accent-primary" />
+          <span className="text-sm font-medium">Nuova Chat</span>
         </button>
       </div>
 
       {/* Error Display */}
       {firestoreError && (
-        <div className="p-4 bg-red-900/20 border-b border-red-800 text-red-400 text-sm">
+        <div className="p-3 mx-4 mt-2 bg-red-50 border border-red-200 rounded-lg text-red-600 text-xs">
           {firestoreError}
         </div>
       )}
 
       {/* Chat List */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto px-3 py-4">
         {/* Pinned Section */}
         {pinnedChats.length > 0 && (
           <>
-            <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">
+            <div className="px-3 py-2 text-xs font-semibold text-text-muted uppercase tracking-wider">
               Fissate
             </div>
-            <div className="space-y-1 px-2">
+            <div className="space-y-1">
               {pinnedChats.map((chat) => {
                 const chatIdToUse = currentChatId || activeChatId;
                 return (
@@ -241,12 +250,12 @@ const ChatSidebar = () => {
                 );
               })}
             </div>
-            <div className="h-px bg-gray-800 mx-4 my-2" />
+            <div className="h-px bg-border-subtle mx-3 my-3" />
           </>
         )}
 
         {/* Unpinned Section */}
-        <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase">
+        <div className="px-3 py-2 text-xs font-semibold text-text-muted uppercase tracking-wider">
           Tutte le chat
         </div>
         <DndContext
@@ -302,13 +311,13 @@ const ChatSidebar = () => {
         </DndContext>
 
         {chats.length === 0 && !loading && (
-          <div className="p-4 text-center text-gray-500 text-sm">
+          <div className="p-4 text-center text-text-muted text-sm">
             Nessuna chat. Crea una nuova chat per iniziare.
           </div>
         )}
 
         {loading && (
-          <div className="p-4 text-center text-gray-500 text-sm">
+          <div className="p-4 text-center text-text-muted text-sm">
             Caricamento...
           </div>
         )}
@@ -378,11 +387,33 @@ const ChatItem = ({
 
   return (
     <div
-      className={`group relative flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer transition-colors ${
+      className={`group relative flex items-center gap-2.5 px-3 py-2.5 rounded-full cursor-pointer transition-all duration-default ${
         isActive
-          ? 'bg-gray-800 text-white'
-          : 'hover:bg-gray-800/50 text-gray-300'
+          ? 'bg-accent-primary/8 border border-accent-primary/25'
+          : isPinned
+          ? 'bg-accent-primary/12 hover:bg-glass-white-hover'
+          : 'bg-transparent hover:bg-glass-white-hover'
       }`}
+      style={{
+        ...(isActive && {
+          boxShadow: '0 6px 18px rgba(0,0,0,0.04)',
+        }),
+        ...(!isActive && {
+          transform: 'translateX(0)',
+        }),
+      }}
+      onMouseEnter={(e) => {
+        if (!isActive) {
+          e.currentTarget.style.transform = 'translateX(2px)';
+          e.currentTarget.style.boxShadow = '0 6px 18px rgba(0,0,0,0.04)';
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!isActive) {
+          e.currentTarget.style.transform = 'translateX(0)';
+          e.currentTarget.style.boxShadow = 'none';
+        }
+      }}
       onClick={(e) => {
         if (!isEditing && onSelect) {
           e.stopPropagation();
@@ -391,9 +422,7 @@ const ChatItem = ({
       }}
     >
       {isPinned && (
-        <svg className="w-4 h-4 text-yellow-500 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-          <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
-        </svg>
+        <Pin size={14} strokeWidth={1.5} className="text-accent-primary flex-shrink-0" fill="currentColor" />
       )}
 
       {isEditing ? (
@@ -403,25 +432,23 @@ const ChatItem = ({
           onChange={(e) => onEditChange(e.target.value)}
           onBlur={onEditSave}
           onKeyDown={handleKeyDown}
-          className="flex-1 bg-gray-700 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="flex-1 bg-bg-surface border border-border-subtle text-text-main px-3 py-1.5 rounded-full text-sm focus:outline-none focus:ring-2 focus:ring-accent-primary/30"
           autoFocus
           onClick={(e) => e.stopPropagation()}
         />
       ) : (
         <>
-          <span className="flex-1 truncate text-sm">{chat.title}</span>
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <span className="flex-1 truncate text-sm text-text-main font-medium">{chat.title}</span>
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-default">
             <button
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
                 onMenuToggle();
               }}
-              className="p-1 hover:bg-gray-700 rounded"
+              className="p-1.5 hover:bg-glass-white-hover rounded-full transition-all duration-fast"
             >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-              </svg>
+              <MoreVertical size={16} strokeWidth={1.5} className="text-text-muted" />
             </button>
           </div>
         </>
@@ -430,7 +457,11 @@ const ChatItem = ({
       {/* Menu Dropdown */}
       {menuOpen && !isEditing && (
         <div
-          className="chat-item-menu absolute right-2 top-full mt-1 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50"
+          className="chat-item-menu absolute right-2 top-full mt-2 w-48 bg-bg-surface border border-border-subtle rounded-lg shadow-lg z-50 overflow-hidden"
+          style={{
+            backdropFilter: 'blur(12px)',
+            boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+          }}
           onClick={(e) => e.stopPropagation()}
         >
           <button
@@ -440,11 +471,9 @@ const ChatItem = ({
               onRename(chat.title);
               onMenuToggle();
             }}
-            className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+            className="w-full text-left px-4 py-2.5 text-sm text-text-main hover:bg-glass-white-hover flex items-center gap-2.5 transition-all duration-fast"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-            </svg>
+            <Edit3 size={16} strokeWidth={1.5} className="text-text-muted" />
             Rinomina
           </button>
           <button
@@ -453,11 +482,9 @@ const ChatItem = ({
               e.stopPropagation();
               onTogglePin();
             }}
-            className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+            className="w-full text-left px-4 py-2.5 text-sm text-text-main hover:bg-glass-white-hover flex items-center gap-2.5 transition-all duration-fast"
           >
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-              <path d={isPinned ? "M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" : "M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"} />
-            </svg>
+            <Pin size={16} strokeWidth={1.5} className={`text-text-muted ${isPinned ? 'fill-current' : ''}`} />
             {isPinned ? 'Rimuovi fissata' : 'Fissa'}
           </button>
           {canMove && (
@@ -468,11 +495,9 @@ const ChatItem = ({
                   e.stopPropagation();
                   onMoveUp();
                 }}
-                className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                className="w-full text-left px-4 py-2.5 text-sm text-text-main hover:bg-glass-white-hover flex items-center gap-2.5 transition-all duration-fast"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                </svg>
+                <ChevronUp size={16} strokeWidth={1.5} className="text-text-muted" />
                 Sposta su
               </button>
               <button
@@ -481,27 +506,23 @@ const ChatItem = ({
                   e.stopPropagation();
                   onMoveDown();
                 }}
-                className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 flex items-center gap-2"
+                className="w-full text-left px-4 py-2.5 text-sm text-text-main hover:bg-glass-white-hover flex items-center gap-2.5 transition-all duration-fast"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
+                <ChevronDown size={16} strokeWidth={1.5} className="text-text-muted" />
                 Sposta giù
               </button>
             </>
           )}
-          <div className="h-px bg-gray-700 my-1" />
+          <div className="h-px bg-border-subtle my-1 mx-2" />
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               onDelete();
             }}
-            className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-gray-700 flex items-center gap-2"
+            className="w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 flex items-center gap-2.5 transition-all duration-fast"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
+            <Trash2 size={16} strokeWidth={1.5} />
             Elimina
           </button>
         </div>

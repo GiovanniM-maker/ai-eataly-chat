@@ -4,6 +4,19 @@ import ModelSelector from './ModelSelector';
 import ModelSettings from './ModelSettings';
 import PipelineConfig from './PipelineConfig';
 import { getModelDisplayName } from '../constants/models';
+import { 
+  Copy, 
+  RotateCcw, 
+  Edit3, 
+  Square, 
+  Sparkles, 
+  Settings, 
+  SlidersHorizontal, 
+  Workflow, 
+  Send, 
+  Image as ImageIcon,
+  X
+} from 'lucide-react';
 
 /**
  * Minimal Chat UI Component with Firestore persistence
@@ -249,45 +262,67 @@ const ChatUI = () => {
   };
 
   return (
-    <div className="flex flex-col flex-1 h-screen bg-gray-950 text-white">
+    <div className="flex flex-col flex-1 h-screen" style={{ backgroundColor: 'var(--bg-app)' }}>
       {/* Header */}
-      <div className="border-b border-gray-800 bg-gray-900 px-6 py-4 flex items-center justify-between">
+      <div 
+        className="border-b px-6 py-4 flex items-center justify-between"
+        style={{
+          background: 'linear-gradient(135deg, rgba(255,255,255,0.8), rgba(246,248,255,0.55))',
+          borderColor: 'var(--border-subtle)',
+        }}
+      >
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold">AI Chat</h1>
+          <h1 className="text-xl font-semibold text-text-main">AI Chat</h1>
           {/* Pipeline Active Badge */}
           {currentPipelineConfig?.enabled && currentPipelineConfig?.model && (
-            <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-900/50 border border-purple-700 rounded text-xs text-purple-200">
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              Pipeline attiva
+            <span 
+              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium pipeline-pulse"
+              style={{
+                background: 'rgba(255,184,76,0.18)',
+                border: '1px solid rgba(255,184,76,0.4)',
+                color: '#CA8A04',
+              }}
+            >
+              <Workflow size={12} strokeWidth={1.5} />
+              Pipeline attiva – {getModelDisplayName(currentPipelineConfig.model)}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <ModelSelector />
           <button
             onClick={() => setShowModelSettings(true)}
-            className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors text-sm"
+            className="p-2 rounded-lg transition-all duration-fast hover:bg-glass-white-hover"
+            style={{ color: 'rgba(74,79,88,0.8)' }}
             title="Model Settings"
+            onMouseEnter={(e) => e.currentTarget.style.color = 'var(--accent-primary)'}
+            onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(74,79,88,0.8)'}
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
+            <SlidersHorizontal size={20} strokeWidth={1.5} />
           </button>
           <button
             onClick={() => setShowPipelineConfig(true)}
-            className={`px-3 py-2 rounded-lg transition-colors text-sm ${
+            className={`p-2 rounded-lg transition-all duration-fast ${
               currentPipelineConfig?.enabled 
-                ? 'bg-purple-700 hover:bg-purple-600 text-white' 
-                : 'bg-gray-700 hover:bg-gray-600 text-white'
+                ? 'text-accent-warning' 
+                : ''
             }`}
+            style={{ 
+              color: currentPipelineConfig?.enabled ? 'var(--accent-warning)' : 'rgba(74,79,88,0.8)',
+            }}
             title="Modello prima"
+            onMouseEnter={(e) => {
+              if (!currentPipelineConfig?.enabled) {
+                e.currentTarget.style.color = 'var(--accent-primary)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!currentPipelineConfig?.enabled) {
+                e.currentTarget.style.color = 'rgba(74,79,88,0.8)';
+              }
+            }}
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
+            <Workflow size={20} strokeWidth={1.5} />
           </button>
         </div>
       </div>
@@ -299,45 +334,68 @@ const ChatUI = () => {
       <PipelineConfig isOpen={showPipelineConfig} onClose={() => setShowPipelineConfig(false)} />
 
       {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto px-6 py-6">
-        <div className="max-w-4xl mx-auto space-y-4">
+      <div className="flex-1 overflow-y-auto px-6 py-8" style={{ backgroundColor: 'var(--bg-app)' }}>
+        <div className="max-w-[900px] mx-auto space-y-3">
           {loading && messages.length === 0 ? (
-            <div className="text-center text-gray-400 mt-12">
+            <div className="text-center text-text-muted mt-12">
               <p>Loading messages...</p>
             </div>
           ) : messages.length === 0 ? (
-            <div className="text-center text-gray-400 mt-12">
+            <div className="text-center text-text-muted mt-12">
               <p>Start a conversation by typing a message below</p>
             </div>
           ) : (
             messages.map((message) => (
               <div
                 key={message.id || `msg-${message.timestamp}`}
-                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group`}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'} group message-enter`}
                 onMouseEnter={() => setHoveredMessageId(message.id)}
                 onMouseLeave={() => setHoveredMessageId(null)}
               >
                 <div
-                  className={`max-w-[80%] rounded-lg px-4 py-3 relative ${
-                    message.role === 'user'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-800 text-gray-100'
-                  }`}
+                  className="max-w-[80%] relative flex items-start gap-3"
+                  style={{
+                    background: 'rgba(255,255,255,0.65)',
+                    backdropFilter: 'blur(12px)',
+                    borderRadius: '18px',
+                    border: '1px solid rgba(200,200,200,0.35)',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.05)',
+                    padding: '16px 18px',
+                    transition: 'transform 120ms ease-out, box-shadow 120ms ease-out, background 120ms ease-out',
+                  }}
                 >
+                  {/* Accent bar on left */}
+                  <div
+                    className="absolute left-0 top-0 bottom-0 w-[3px] rounded-full"
+                    style={{
+                      background: message.role === 'user' 
+                        ? 'rgba(107,203,119,0.35)' 
+                        : 'rgba(74,116,255,0.35)',
+                    }}
+                  />
+                  
                   {/* Message Actions Bar (visible on hover) */}
                   {hoveredMessageId === message.id && (
-                    <div className="absolute -top-8 right-0 flex gap-1 bg-gray-900 rounded-lg px-2 py-1 border border-gray-700 transition-opacity z-10">
+                    <div 
+                      className="absolute -top-9 right-0 flex gap-1 rounded-full px-2 py-1 z-10"
+                      style={{
+                        background: 'rgba(255,255,255,0.9)',
+                        border: '1px solid rgba(0,0,0,0.04)',
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                      }}
+                    >
                       {/* Copy Button (all messages) */}
                       {(message.content || message.base64) && (
                         <button
                           type="button"
                           onClick={() => copyToClipboard(message.content || '')}
-                          className="p-1.5 hover:bg-gray-700 rounded transition-colors"
+                          className="p-1.5 rounded-full transition-all duration-fast hover:bg-glass-white-hover"
+                          style={{ color: 'rgba(74,79,88,0.5)' }}
                           title="Copia"
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--accent-primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(74,79,88,0.5)'}
                         >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
+                          <Copy size={16} strokeWidth={1.5} />
                         </button>
                       )}
                       
@@ -346,12 +404,13 @@ const ChatUI = () => {
                         <button
                           type="button"
                           onClick={() => handleEditMessage(message.id, message.content)}
-                          className="p-1.5 hover:bg-gray-700 rounded transition-colors"
+                          className="p-1.5 rounded-full transition-all duration-fast hover:bg-glass-white-hover"
+                          style={{ color: 'rgba(74,79,88,0.5)' }}
                           title="Modifica"
+                          onMouseEnter={(e) => e.currentTarget.style.color = 'var(--accent-primary)'}
+                          onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(74,79,88,0.5)'}
                         >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
+                          <Edit3 size={16} strokeWidth={1.5} />
                         </button>
                       )}
                       
@@ -361,100 +420,134 @@ const ChatUI = () => {
                           type="button"
                           onClick={() => handleRegenerate(message.id)}
                           disabled={isLoading || isGenerating}
-                          className="p-1.5 hover:bg-gray-700 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="p-1.5 rounded-full transition-all duration-fast hover:bg-glass-white-hover disabled:opacity-30 disabled:cursor-not-allowed"
+                          style={{ color: 'rgba(74,79,88,0.5)' }}
                           title="Rigenera risposta"
+                          onMouseEnter={(e) => {
+                            if (!e.currentTarget.disabled) {
+                              e.currentTarget.style.color = 'var(--accent-primary)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!e.currentTarget.disabled) {
+                              e.currentTarget.style.color = 'rgba(74,79,88,0.5)';
+                            }
+                          }}
                         >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                          </svg>
+                          <RotateCcw size={16} strokeWidth={1.5} />
                         </button>
                       )}
                     </div>
                   )}
 
-                  {/* Pre-processed badge */}
-                  {message.preprocessedBy && (
-                    <div className="mb-2">
-                      <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-900/50 border border-purple-700 rounded text-xs text-purple-200">
-                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                        </svg>
-                        Pre-processato da {getModelDisplayName(message.preprocessedBy)}
-                      </span>
-                    </div>
-                  )}
-                  
-                  {/* Model label (if different from selected) */}
-                  {message.model && message.model !== selectedModel && !message.preprocessedBy && (
-                    <div className="mb-2">
-                      <span className="text-xs opacity-70 italic">
-                        Model: {getModelDisplayName(message.model)}
-                      </span>
-                    </div>
-                  )}
-                  
-                  {/* Text content (editable if editing) */}
-                  {message.content && (
-                    editingMessageId === message.id ? (
+                  {/* Content wrapper */}
+                  <div className="flex-1 pl-3">
+                    {/* Pre-processed badge */}
+                    {message.preprocessedBy && (
                       <div className="mb-2">
-                        <textarea
-                          value={editedText}
-                          onChange={(e) => setEditedText(e.target.value)}
-                          className="w-full bg-gray-700 text-white rounded px-2 py-1 resize-none min-h-[60px]"
-                          rows={3}
-                          autoFocus
-                        />
-                        <div className="flex gap-2 mt-2">
-                          <button
-                            type="button"
-                            onClick={() => handleSaveEdit(message.id)}
-                            className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm"
-                          >
-                            Aggiorna
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleCancelEdit}
-                            className="px-3 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded text-sm"
-                          >
-                            Annulla
-                          </button>
-                        </div>
+                        <span 
+                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium"
+                          style={{
+                            background: 'rgba(255,184,76,0.15)',
+                            color: '#CA8A04',
+                          }}
+                        >
+                          <Workflow size={11} strokeWidth={1.5} />
+                          Pre-processato da {getModelDisplayName(message.preprocessedBy)}
+                        </span>
                       </div>
-                    ) : (
-                      <p className="whitespace-pre-wrap mb-2">{message.content}</p>
-                    )
-                  )}
-                  
-                  {/* Image messages: type === "image" with base64 */}
-                  {message.type === 'image' && message.base64 && (
-                    <img
-                      src={message.base64}
-                      alt={message.role === 'user' ? 'Uploaded image' : 'Generated image'}
-                      className="max-w-full rounded-lg mt-2"
-                      style={{ maxWidth: '100%', height: 'auto' }}
-                      onLoad={() => console.log('[UI] Image rendered successfully from base64')}
-                      onError={(e) => console.error('[UI] Error rendering image from base64:', e)}
-                    />
-                  )}
+                    )}
+                    
+                    {/* Model label (if different from selected) */}
+                    {message.model && message.model !== selectedModel && !message.preprocessedBy && (
+                      <div className="mb-2">
+                        <span className="text-xs text-text-muted italic">
+                          Model: {getModelDisplayName(message.model)}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {/* Text content (editable if editing) */}
+                    {message.content && (
+                      editingMessageId === message.id ? (
+                        <div className="mb-2">
+                          <textarea
+                            value={editedText}
+                            onChange={(e) => setEditedText(e.target.value)}
+                            className="w-full bg-bg-surface border border-border-subtle text-text-main rounded-lg px-3 py-2 resize-none min-h-[60px] text-sm focus:outline-none focus:ring-2 focus:ring-accent-primary/30"
+                            rows={3}
+                            autoFocus
+                          />
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEdit(message.id)}
+                              className="px-3 py-1.5 bg-accent-success hover:bg-accent-success/90 text-white rounded-lg text-sm transition-all duration-fast"
+                            >
+                              Aggiorna
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelEdit}
+                              className="px-3 py-1.5 bg-border-subtle hover:bg-border-soft text-text-main rounded-lg text-sm transition-all duration-fast"
+                            >
+                              Annulla
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p 
+                          className="whitespace-pre-wrap mb-2"
+                          style={{
+                            fontSize: '15px',
+                            lineHeight: '1.6',
+                            color: 'var(--text-main)',
+                          }}
+                        >
+                          {message.content}
+                        </p>
+                      )
+                    )}
+                    
+                    {/* Image messages: type === "image" with base64 */}
+                    {message.type === 'image' && message.base64 && (
+                      <img
+                        src={message.base64}
+                        alt={message.role === 'user' ? 'Uploaded image' : 'Generated image'}
+                        className="max-w-full rounded-lg mt-2"
+                        style={{ maxWidth: '100%', height: 'auto', borderRadius: '12px' }}
+                        onLoad={() => console.log('[UI] Image rendered successfully from base64')}
+                        onError={(e) => console.error('[UI] Error rendering image from base64:', e)}
+                      />
+                    )}
+                  </div>
                 </div>
               </div>
             ))
           )}
           {isLoading && (
             <div className="flex justify-start">
-              <div className="bg-gray-800 rounded-lg px-4 py-3 relative">
-                <p className="text-gray-400">Thinking...</p>
+              <div 
+                className="relative rounded-lg px-4 py-3"
+                style={{
+                  background: 'rgba(255,255,255,0.65)',
+                  backdropFilter: 'blur(12px)',
+                  border: '1px solid rgba(200,200,200,0.35)',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.05)',
+                }}
+              >
+                <p className="text-text-muted text-sm">Thinking...</p>
                 {/* Stop Generation Button */}
                 {isGenerating && (
                   <button
                     type="button"
                     onClick={stopGeneration}
-                    className="absolute -top-8 right-0 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 transition-colors"
+                    className="absolute -top-9 right-0 bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-full text-sm flex items-center gap-2 transition-all duration-fast shadow-md"
+                    style={{ transform: 'scale(1)' }}
+                    onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                    onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                   >
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M6 6h12v12H6z" />
-                    </svg>
+                    <Square size={14} strokeWidth={2} fill="currentColor" />
                     Stop
                   </button>
                 )}
@@ -467,50 +560,68 @@ const ChatUI = () => {
 
       {/* Snackbar for feedback */}
       {snackbar && (
-        <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white px-4 py-2 rounded-lg shadow-lg z-50">
+        <div 
+          className="fixed bottom-24 left-1/2 transform -translate-x-1/2 px-4 py-2.5 rounded-full shadow-lg z-50"
+          style={{
+            background: 'rgba(255,255,255,0.95)',
+            backdropFilter: 'blur(12px)',
+            border: '1px solid rgba(200,200,200,0.3)',
+            color: 'var(--text-main)',
+            fontSize: '13px',
+            fontWeight: '500',
+          }}
+        >
           {snackbar}
         </div>
       )}
 
       {/* Input Area */}
-      <div className="border-t border-gray-800 bg-gray-900 p-4">
-        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
+      <div 
+        className="border-t p-4 sticky bottom-0"
+        style={{
+          borderColor: 'var(--border-subtle)',
+          backgroundColor: 'var(--bg-app)',
+        }}
+      >
+        <form onSubmit={handleSubmit} className="max-w-[900px] mx-auto">
           {error && (
-            <div className="mb-3 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
+            <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
               {error}
             </div>
           )}
           {firestoreError && (
-            <div className="mb-3 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
+            <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm">
               Firestore Error: {firestoreError}
             </div>
           )}
           {firestoreStatus && (
-            <div className={`mb-3 p-2 rounded text-sm ${
+            <div className={`mb-3 p-2 rounded-lg text-sm ${
               firestoreStatus.includes('OK') 
-                ? 'bg-green-900/50 border border-green-700 text-green-200' 
-                : 'bg-red-900/50 border border-red-700 text-red-200'
+                ? 'bg-green-50 border border-green-200 text-green-700' 
+                : 'bg-red-50 border border-red-200 text-red-600'
             }`}>
               {firestoreStatus}
             </div>
           )}
-          {/* Firestore Test Buttons */}
-          <div className="mb-3 flex gap-2">
-            <button
-              type="button"
-              onClick={handleTestRead}
-              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded transition-colors"
-            >
-              Test Read
-            </button>
-            <button
-              type="button"
-              onClick={handleTestWrite}
-              className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-sm rounded transition-colors"
-            >
-              Test Write
-            </button>
-          </div>
+          {/* Firestore Test Buttons - Hidden in production, shown only for debugging */}
+          {process.env.NODE_ENV === 'development' && (
+            <div className="mb-3 flex gap-2">
+              <button
+                type="button"
+                onClick={handleTestRead}
+                className="px-3 py-1.5 bg-bg-surface border border-border-subtle hover:bg-glass-white-hover text-text-main text-sm rounded-lg transition-all duration-fast"
+              >
+                Test Read
+              </button>
+              <button
+                type="button"
+                onClick={handleTestWrite}
+                className="px-3 py-1.5 bg-bg-surface border border-border-subtle hover:bg-glass-white-hover text-text-main text-sm rounded-lg transition-all duration-fast"
+              >
+                Test Write
+              </button>
+            </div>
+          )}
           {/* Image Preview Bubble (above textarea) */}
           {pendingImages.length > 0 && (
             <div className="mb-3 flex flex-wrap gap-2">
@@ -519,21 +630,36 @@ const ChatUI = () => {
                   <img
                     src={img.base64}
                     alt={`Preview ${index + 1}`}
-                    className="h-20 w-20 rounded-lg object-cover border border-gray-700"
+                    className="h-20 w-20 rounded-lg object-cover border"
+                    style={{
+                      borderColor: 'var(--border-subtle)',
+                    }}
                   />
                   <button
                     type="button"
                     onClick={() => handleRemoveImage(index)}
-                    className="absolute -top-2 -right-2 bg-red-600 hover:bg-red-700 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold transition-colors"
+                    className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center transition-all duration-fast shadow-md"
+                    style={{ transform: 'scale(1)' }}
                     title="Remove image"
+                    onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
+                    onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                   >
-                    ×
+                    <X size={14} strokeWidth={2} />
                   </button>
                 </div>
               ))}
             </div>
           )}
-          <div className="flex gap-3 items-end">
+          <div 
+            className="flex gap-2 items-end"
+            style={{
+              background: 'rgba(255,255,255,0.9)',
+              borderRadius: '22px',
+              border: '1px solid rgba(200,200,200,0.4)',
+              padding: '6px 8px 6px 12px',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.04)',
+            }}
+          >
             <input
               ref={fileInputRef}
               type="file"
@@ -545,12 +671,13 @@ const ChatUI = () => {
             />
             <label
               htmlFor="image-upload"
-              className="px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-lg cursor-pointer transition-colors flex items-center flex-shrink-0"
+              className="p-2 rounded-full cursor-pointer transition-all duration-fast flex items-center flex-shrink-0 hover:bg-glass-white-hover"
+              style={{ color: 'rgba(74,79,88,0.8)' }}
               title="Attach image"
+              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--accent-primary)'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(74,79,88,0.8)'}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-              </svg>
+              <ImageIcon size={20} strokeWidth={1.5} />
             </label>
             <textarea
               value={input}
@@ -559,10 +686,13 @@ const ChatUI = () => {
               placeholder="Type a message... (Enter to send, Shift+Enter for new line)"
               disabled={isLoading}
               rows={1}
-              className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none min-h-[48px] max-h-[200px] overflow-y-auto"
+              className="flex-1 bg-transparent border-none outline-none resize-none min-h-[40px] max-h-[200px] overflow-y-auto"
               style={{ 
+                fontSize: '14px',
+                color: 'var(--text-main)',
                 height: 'auto',
-                minHeight: '48px'
+                minHeight: '40px',
+                lineHeight: '1.5',
               }}
               onInput={(e) => {
                 e.target.style.height = 'auto';
@@ -572,9 +702,27 @@ const ChatUI = () => {
             <button
               type="submit"
               disabled={(input.trim().length === 0 && pendingImages.length === 0) || isLoading}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg transition-all font-medium flex-shrink-0"
+              className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-fast flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{
+                background: (input.trim().length > 0 || pendingImages.length > 0) && !isLoading
+                  ? 'var(--accent-primary)'
+                  : 'var(--border-subtle)',
+                transform: 'scale(1)',
+              }}
+              onMouseEnter={(e) => {
+                if (!e.currentTarget.disabled) {
+                  e.currentTarget.style.transform = 'scale(1.08)';
+                  e.currentTarget.style.background = '#3D63FF';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!e.currentTarget.disabled) {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.background = 'var(--accent-primary)';
+                }
+              }}
             >
-              {isLoading ? 'Sending...' : 'Send'}
+              <Send size={16} strokeWidth={2} className="text-white" />
             </button>
           </div>
         </form>
