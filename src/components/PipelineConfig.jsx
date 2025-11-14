@@ -5,7 +5,7 @@ import { loadPipelineConfig, savePipelineConfig } from '../lib/pipelineConfig';
 
 /**
  * Pipeline Config Modal - "Il modello prima" configuration
- * Per chat specifica: users/{uid}/chats/{chatId}/pipeline
+ * Per chat specifica: users/{uid}/chats/{chatId} (pipeline stored as field in chat document)
  */
 const PipelineConfig = ({ isOpen, onClose }) => {
   const { activeChatId } = useChatStore();

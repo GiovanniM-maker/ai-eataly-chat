@@ -150,14 +150,22 @@ function extractText(obj) {
 /**
  * Call Vertex AI Gemini generateContent (NOT streaming)
  * Supports gemini-2.5-flash-image and gemini-2.5-nano-banana
+ * IMPORTANT: Accepts clean string prompt only - images should NOT be sent here
+ * (Images are processed by preprocessor before reaching this function)
  */
 const callNanobananaAPI = async (prompt, modelConfig = null, modelSettings = null, debugMode = false, attachments = []) => {
   const DEBUG_MODE = process.env.DEBUG_MODE === "true" || debugMode === true;
   
   if (DEBUG_MODE) {
     console.log("[DEBUG] ============ NANOBANANA API CALL =============");
-    console.log("[DEBUG] Prompt:", prompt);
-    console.log("[API/NANOBANANA] Attachments received:", attachments);
+    console.log("[DEBUG] Prompt (clean string):", prompt.substring(0, 200) + '...');
+    console.log("[API/NANOBANANA] Attachments (should be empty):", attachments.length);
+  }
+  
+  // IMPORTANT: Nanobanana expects clean string prompt only
+  // Do NOT process attachments here - they were already handled by preprocessor
+  if (attachments && attachments.length > 0) {
+    console.warn("[API/NANOBANANA] WARNING: Attachments received but will be ignored. Nanobanana expects clean string prompt only.");
   }
 
   // STEP 1: Generate access token using google-auth-library
@@ -203,19 +211,12 @@ const callNanobananaAPI = async (prompt, modelConfig = null, modelSettings = nul
     parts.push({ text: promptText });
   }
   
-  // Add image attachments as inline_data
-  if (attachments && attachments.length > 0) {
-    attachments.forEach(att => {
-      parts.push({
-        inline_data: {
-          mime_type: att.mimeType || 'image/jpeg',
-          data: att.base64
-        }
-      });
-    });
-  }
+  // IMPORTANT: Do NOT add image attachments here
+  // Nanobanana expects clean string prompt only
+  // Images were already processed by preprocessor if pipeline was enabled
+  // Only add text part - no images
   
-  console.log("[API/NANOBANANA] Parts built for model:", JSON.stringify(parts, null, 2));
+  console.log("[API/NANOBANANA] Parts built for model (text only):", JSON.stringify(parts, null, 2));
 
   // Build contents array
   const contents = [
@@ -391,9 +392,11 @@ export default async function handler(req, res) {
       });
     }
 
-    // Extract attachments
-    const imageAttachments = attachments || [];
-    console.log("[API/NANOBANANA] Attachments received:", imageAttachments);
+    // IMPORTANT: Nanobanana expects clean string prompt only
+    // Images were already processed by preprocessor if pipeline was enabled
+    // DO NOT send attachments to Nanobanana - it expects clean string prompt
+    console.log("[API/NANOBANANA] Received prompt (clean string):", prompt.substring(0, 200) + '...');
+    console.log("[API/NANOBANANA] Attachments ignored (images already processed by preprocessor)");
 
     // Load model configuration from Firestore
     console.log('[API:NANOBANANA] Loading model config from Firestore...');
@@ -411,15 +414,17 @@ export default async function handler(req, res) {
     const normalizedOutputType = outputType.toLowerCase();
     
     // Log payload building
-    console.log(`[MODEL] Payload built for ${modelToUse}`);
-    console.log(`[MODEL] Output type: ${normalizedOutputType}`);
+    console.log(`[API:NANOBANANA] Payload built for ${modelToUse}`);
+    console.log(`[API:NANOBANANA] Output type: ${normalizedOutputType}`);
+    console.log(`[API:NANOBANANA] Prompt length: ${prompt.length}`);
     if (DEBUG_MODE) {
-      console.log(`[MODEL] Applying merged config:`, modelSettings);
+      console.log(`[API:NANOBANANA] Applying merged config:`, modelSettings);
     }
 
     // Generate via Vertex AI generateContent (NOT streaming)
-    console.log('[API:NANOBANANA] Calling Nanobanana API:', { prompt, model: modelToUse, outputType: normalizedOutputType, attachmentsCount: imageAttachments.length });
-    const result = await callNanobananaAPI(prompt, modelConfig, modelSettings, DEBUG_MODE, imageAttachments);
+    // IMPORTANT: Do NOT send attachments - Nanobanana expects clean string prompt only
+    console.log('[API:NANOBANANA] Calling Nanobanana API:', { promptLength: prompt.length, model: modelToUse, outputType: normalizedOutputType });
+    const result = await callNanobananaAPI(prompt, modelConfig, modelSettings, DEBUG_MODE, []);
 
     // Build response
     const responseData = {};

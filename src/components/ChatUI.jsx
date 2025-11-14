@@ -63,10 +63,12 @@ const ChatUI = () => {
     loadAllModelConfigs();
   }, [loadChatsFromFirestore]);
 
-  // Load messages when active chat changes
+  // Load messages and pipeline config when active chat changes
   useEffect(() => {
     if (activeChatId) {
       loadMessages();
+      const { loadPipelineConfig } = useChatStore.getState();
+      loadPipelineConfig();
     }
   }, [activeChatId, loadMessages]);
 

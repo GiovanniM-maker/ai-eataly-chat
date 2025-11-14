@@ -424,6 +424,9 @@ export const useChatStore = create((set, get) => ({
       // Load messages for the new active chat
       await get().loadMessages();
       
+      // Load pipeline config for the new active chat
+      await get().loadPipelineConfig();
+      
       console.log('[Store] Active chat set successfully');
     } catch (error) {
       console.error('[Store] Error setting active chat:', error);
@@ -1080,38 +1083,57 @@ export const useChatStore = create((set, get) => ({
       try {
         const pipeline = await loadChatPipelineConfig(chatId);
         
-        console.log('[PIPELINE] Enabled for chat ID:', chatId);
+        console.log('[PIPELINE] Loading config for chat ID:', chatId);
         console.log('[PIPELINE] Config:', {
           enabled: pipeline.enabled,
           hasModel: !!pipeline.model,
           hasSystemInstruction: !!pipeline.systemInstruction
         });
+        console.log('[PIPELINE] Attachments found:', attachments.length);
         
-        if (pipeline.enabled && pipeline.model && pipeline.systemInstruction && pipeline.systemInstruction.trim() !== '') {
+        if (pipeline.enabled && pipeline.systemInstruction && pipeline.systemInstruction.trim() !== '') {
           console.log('[PIPELINE] ✅ Pipeline is ACTIVE');
-          console.log('[PIPELINE] Pre-model:', pipeline.model);
           console.log('[PIPELINE] System instruction length:', pipeline.systemInstruction.length);
           console.log('[PIPELINE] Original user input:', originalUserMessage);
           
-          pipelineModel = pipeline.model; // Store for badge
+          // Preprocessor model is ALWAYS "gemini-2.5-flash-preview"
+          const preprocessorModel = 'gemini-2.5-flash-preview-09-2025';
+          pipelineModel = preprocessorModel; // Store for badge
           
-          // Call pre-model API
+          // Build preprocessInput with images if attachments exist
+          const preprocessInput = {
+            role: "user",
+            parts: [
+              { text: originalUserMessage },
+              ...attachments.map(img => ({
+                inline_data: {
+                  mime_type: img.mimeType || 'image/jpeg',
+                  data: img.base64
+                }
+              }))
+            ]
+          };
+          
+          console.log('[PIPELINE] Preprocess input:', {
+            textLength: originalUserMessage.length,
+            attachmentsCount: attachments.length,
+            partsCount: preprocessInput.parts.length
+          });
+          
+          // Call preprocessor API
           const apiUrl = import.meta.env.VITE_API_URL || '/api/chat';
-          const preModelConfig = resolveModelConfig(pipeline.model);
+          const preModelConfig = resolveModelConfig(preprocessorModel);
           
-          // Build message for pre-model: system instruction + user message (NO XML TAGS)
-          // The backend will handle system instructions correctly
-          const preModelMessage = `${pipeline.systemInstruction}\n\nUser message: ${originalUserMessage}`;
-          
+          // Build final prompt: systemInstructions + preprocessedText
+          // But first, we need to call the preprocessor with the input
           const preModelSettings = {
-            system: pipeline.systemInstruction, // Pass system instruction via modelSettings
+            system: pipeline.systemInstruction,
             temperature: pipeline.temperature,
             top_p: pipeline.topP,
             max_output_tokens: pipeline.maxTokens
           };
           
-          console.log('[PIPELINE] Calling pre-model API:', pipeline.model);
-          console.log('[PIPELINE] Pre-model message (first 200 chars):', preModelMessage.substring(0, 200));
+          console.log('[PIPELINE] Calling preprocessor model:', preprocessorModel);
           
           const preResponse = await fetch(apiUrl, {
             method: 'POST',
@@ -1119,15 +1141,16 @@ export const useChatStore = create((set, get) => ({
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              message: preModelMessage,
+              message: originalUserMessage, // Text message
               model: preModelConfig.googleModel,
-              modelSettings: preModelSettings
+              modelSettings: preModelSettings,
+              attachments: attachments.length > 0 ? attachments : undefined // Pass attachments
             }),
           });
           
           if (!preResponse.ok) {
             const errorText = await preResponse.text();
-            throw new Error(`Pre-model API error: ${preResponse.status} - ${errorText}`);
+            throw new Error(`Preprocessor API error: ${preResponse.status} - ${errorText}`);
           }
           
           const preData = await preResponse.json();
@@ -1135,9 +1158,11 @@ export const useChatStore = create((set, get) => ({
           // Extract preprocessed text (must be a clean string)
           const preprocessedText = preData.reply || preData.text || originalUserMessage;
           
+          console.log('[PIPELINE] Preprocessed output:', preprocessedText.substring(0, 200) + '...');
+          
           // Ensure it's a string and clean it
           if (typeof preprocessedText !== 'string') {
-            console.warn('[PIPELINE] Pre-model returned non-string, using original message');
+            console.warn('[PIPELINE] Preprocessor returned non-string, using original message');
             finalUserMessage = originalUserMessage;
           } else {
             // Clean the preprocessed text (remove any XML tags or invalid characters)
@@ -1146,13 +1171,11 @@ export const useChatStore = create((set, get) => ({
               .replace(/<system>.*?<\/system>/gi, '')
               .trim();
             
-            finalUserMessage = cleanedText || originalUserMessage;
+            // Build final prompt: systemInstructions + preprocessedText
+            finalUserMessage = pipeline.systemInstruction + "\n" + (cleanedText || originalUserMessage);
             pipelineUsed = true;
             
-            console.log('[PIPELINE] ✅ Pre-model output:');
-            console.log(finalUserMessage);
-            console.log('[PIPELINE] Final message sent to main model:');
-            console.log(JSON.stringify({ role: 'user', parts: [{ text: finalUserMessage }] }, null, 2));
+            console.log('[PIPELINE] Final prompt (first 300 chars):', finalUserMessage.substring(0, 300) + '...');
           }
         } else {
           console.log('[PIPELINE] ⚠️ Disabled or incomplete config');
@@ -1198,8 +1221,13 @@ export const useChatStore = create((set, get) => ({
       // Route to appropriate handler based on model provider
       if (config.provider === 'nanobanana') {
         // Nanobanana via Vertex AI generateContent
+        // IMPORTANT: Nanobanana expects clean string prompt only (no images unless outputType supports them)
+        // Images were already processed by preprocessor if pipeline was enabled
         const prompt = finalUserMessage; // Use preprocessed message if pipeline was used
-        await get().generateNanobananaImage(prompt, selectedModel, attachments);
+        console.log('[PIPELINE] Calling main model (Nanobanana):', selectedModel);
+        console.log('[PIPELINE] Prompt length:', prompt.length);
+        // Do NOT send attachments to Nanobanana - it expects clean string prompt
+        await get().generateNanobananaImage(prompt, selectedModel, []);
         return null;
       } else if (config.provider === 'imagen') {
         // Imagen 4 via Vertex AI generateImage
@@ -1210,11 +1238,13 @@ export const useChatStore = create((set, get) => ({
         // Text generation (default)
         const apiUrl = import.meta.env.VITE_API_URL || config.endpoint;
         
+        console.log('[PIPELINE] Calling main model:', selectedModel);
         console.log('[Store] Calling API:', apiUrl);
         console.log('[Store] Request body:', { 
           message: finalUserMessage, 
           model: config.googleModel,
-          isPreprocessed: pipelineUsed 
+          isPreprocessed: pipelineUsed,
+          attachmentsCount: attachments.length
         });
 
         // Build modelSettings from current config

@@ -113,8 +113,9 @@ const getAccessToken = async () => {
 /**
  * Call Google Gemini API (REST API v1)
  * Generic function that can be used for both pre-model and main model
+ * Supports images via attachments array
  */
-const callModelAPI = async (model, message, modelConfig = null, modelSettings = null, debugMode = false) => {
+const callModelAPI = async (model, message, modelConfig = null, modelSettings = null, debugMode = false, attachments = []) => {
   const accessToken = await getAccessToken();
   
   // Gemini 2.x models use v1 API
@@ -127,6 +128,7 @@ const callModelAPI = async (model, message, modelConfig = null, modelSettings = 
     console.log("[DEBUG] ============ GEMINI API CALL =============");
     console.log("[DEBUG] Model:", model);
     console.log("[DEBUG] Endpoint:", endpoint);
+    console.log("[DEBUG] Attachments:", attachments.length);
   }
 
   // Extract modelSettings (override Firestore config if provided)
@@ -140,19 +142,37 @@ const callModelAPI = async (model, message, modelConfig = null, modelSettings = 
   // Get system instruction (priority: modelSettings > Firestore config)
   const systemPrompt = system || modelConfig?.systemPrompt;
   
-  // Build contents array - Gemini ONLY accepts "user" or "model" roles
-  // System instructions are embedded in the user message text (NO XML tags, NO system role)
-  let userMessageText = message;
+  // Build parts array - start with text
+  const parts = [];
   
+  // Add text part (with system instruction prepended if present)
+  let userMessageText = message;
   if (systemPrompt && systemPrompt.trim() !== "") {
     // Prepend system instruction as plain text (NO XML tags)
     userMessageText = `${systemPrompt}\n\n${message}`;
   }
   
+  if (userMessageText.trim()) {
+    parts.push({ text: userMessageText });
+  }
+  
+  // Add image attachments as inline_data parts
+  if (attachments && attachments.length > 0) {
+    console.log("[API] Adding", attachments.length, "image attachments to request");
+    attachments.forEach(att => {
+      parts.push({
+        inline_data: {
+          mime_type: att.mimeType || 'image/jpeg',
+          data: att.base64
+        }
+      });
+    });
+  }
+  
   const contents = [
     {
       role: 'user', // ONLY valid roles: "user" or "model"
-      parts: [{ text: userMessageText }]
+      parts: parts
     }
   ];
 
@@ -240,7 +260,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { message, model: requestedModel, modelSettings, debugMode: requestDebugMode } = req.body;
+    const { message, model: requestedModel, modelSettings, debugMode: requestDebugMode, attachments } = req.body;
     const DEBUG_MODE = process.env.DEBUG_MODE === "true" || requestDebugMode === true;
     
     if (DEBUG_MODE) {
@@ -262,8 +282,11 @@ export default async function handler(req, res) {
       });
     }
 
-    // Pipeline is now handled entirely in the frontend (chatStore.js)
-    // The backend just processes the message it receives (already preprocessed if pipeline was used)
+    // Extract attachments (for preprocessing with images)
+    const imageAttachments = attachments || [];
+    console.log('[API] Received request with', imageAttachments.length, 'attachments');
+    
+    // Pipeline preprocessing is handled in frontend, but backend supports images for preprocessing
     const finalUserMessage = message;
     
     // Load main model configuration from Firestore
@@ -277,9 +300,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // 5) Call main model API with processed message
-    console.log('[API] Calling main model API:', { model, messageLength: finalUserMessage.length });
-    const result = await callModelAPI(model, finalUserMessage, modelConfig, modelSettings, DEBUG_MODE);
+    // Call model API with message and attachments (for preprocessing)
+    console.log('[API] Calling model API:', { model, messageLength: finalUserMessage.length, attachmentsCount: imageAttachments.length });
+    const result = await callModelAPI(model, finalUserMessage, modelConfig, modelSettings, DEBUG_MODE, imageAttachments);
 
     // Extract reply from response
     const reply = result.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated';
