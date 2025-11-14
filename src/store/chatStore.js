@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { collection, getDocs, addDoc, getDoc, doc } from 'firebase/firestore';
-import { db } from '../config/firebase';
+import { db, app } from '../config/firebase';
 
 /**
  * Minimal chat store
@@ -82,75 +82,77 @@ export const useChatStore = create((set, get) => ({
   }
 }));
 
-/**
- * Test Firestore Read
- */
 export async function testFirestoreRead() {
+  console.group("[🔥 EXTREME FIRESTORE READ DEBUG]");
+
   try {
-    const querySnapshot = await getDocs(collection(db, "test"));
-    const documents = [];
+    console.log("➡️ Starting EXTREME read test...");
+    console.log("📌 PROJECT ID:", import.meta.env.VITE_FIREBASE_PROJECT_ID);
+
+    const colRef = collection(db, "test");
+    console.log("📁 Collection REF:", colRef);
+
+    const querySnapshot = await getDocs(colRef);
+
+    console.log("📄 RAW SNAPSHOT:", querySnapshot);
+
+    const docs = [];
     querySnapshot.forEach((doc) => {
-      documents.push({ id: doc.id, ...doc.data() });
+      docs.push({ id: doc.id, ...doc.data() });
     });
-    console.log('[Firestore] Read test - Documents:', documents);
+
+    console.log("📄 PARSED DOCUMENTS:", docs);
+    console.groupEnd();
     return true;
+
   } catch (error) {
-    console.error('[Firestore] Read test - ERROR:', error);
+    console.error("❌ READ FAILED", error);
+
+    if (error.stack) console.error("🧱 STACK:", error.stack);
+    if (error.message) console.error("🗯 MESSAGE:", error.message);
+
+    console.groupEnd();
     return false;
   }
 }
 
-// SUPER DETAILED WRITE DEBUG
 export async function testFirestoreWrite() {
-  console.group("[🔥 Firestore WRITE DEBUG]");
+  console.group("[🔥 EXTREME FIRESTORE WRITE DEBUG]");
 
   try {
-    console.log("➡️ Starting write test...");
+    console.log("➡️ Starting EXTREME write test...");
+    console.log("📌 PROJECT ID:", import.meta.env.VITE_FIREBASE_PROJECT_ID);
+    console.log("📌 API KEY:", import.meta.env.VITE_FIREBASE_API_KEY);
+    console.log("📌 AUTH DOMAIN:", import.meta.env.VITE_FIREBASE_AUTH_DOMAIN);
 
-    console.log("📌 Project ID:", import.meta.env.VITE_FIREBASE_PROJECT_ID);
-    console.log("📌 Firestore Instance:", db);
+    console.log("📦 Firebase APP object:", app);
+    console.log("📦 Firestore DB object:", db);
 
-    const testCollection = "test";
     const payload = {
-      timestamp: Date.now(),
-      example: "write-test",
-      envProjectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+      message: "Hello from EXTREME DEBUG",
+      ts: Date.now(),
+      random: Math.random(),
     };
 
     console.log("🧪 Payload:", payload);
-    console.log("📁 Writing to collection:", testCollection);
 
-    // REAL WRITE COMMAND
-    const ref = await addDoc(collection(db, testCollection), payload);
+    const colRef = collection(db, "test");
+    console.log("📁 Collection REF:", colRef);
 
-    console.log("✅ WRITE SUCCESS - Document ID:", ref.id);
+    const docRef = await addDoc(colRef, payload);
 
-    // VERIFY BY READING BACK
-    const snap = await getDoc(doc(db, testCollection, ref.id));
-
-    if (snap.exists()) {
-      console.log("📖 CONFIRMED READ BACK:", snap.data());
-    } else {
-      console.warn("⚠️ READ BACK FAILED — document not found after write");
-    }
+    console.log("✅ WRITE SUCCESS!");
+    console.log("🆔 NEW DOCUMENT ID:", docRef.id);
 
     console.groupEnd();
     return true;
 
   } catch (error) {
-    console.group("❌ WRITE ERROR DETAILS");
-    console.error("Error:", error);
-    console.error("Error code:", error.code);
-    console.error("Error message:", error.message);
-    console.error("Error stack:", error.stack);
-    console.groupEnd();
+    console.error("❌ WRITE FAILED", error);
 
-    console.group("🧠 Possible Causes");
-    console.warn("1️⃣ Firestore Rules block writes");
-    console.warn("2️⃣ Wrong projectId / wrong environment variables");
-    console.warn("3️⃣ Firestore is Datastore Mode (write not allowed)");
-    console.warn("4️⃣ App using different Firebase project than expected");
-    console.groupEnd();
+    if (error.stack) console.error("🧱 STACK:", error.stack);
+    if (error.message) console.error("🗯 MESSAGE:", error.message);
+    if (error.code) console.error("🔥 FIRESTORE ERROR CODE:", error.code);
 
     console.groupEnd();
     return false;
