@@ -1,4 +1,4 @@
-import { createSign } from 'crypto';
+import { GoogleAuth } from "google-auth-library";
 
 // CORS allowed origins
 const ALLOWED_ORIGINS = [
@@ -7,137 +7,47 @@ const ALLOWED_ORIGINS = [
   'https://ai-eataly-project.vercel.app'
 ];
 
-// Cache for access token
-let cachedAccessToken = null;
-let cachedAccessTokenExpiry = 0;
-
 /**
- * Load Service Account from environment variable
- */
-const loadServiceAccount = () => {
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (!raw) {
-    throw new Error('Missing GOOGLE_SERVICE_ACCOUNT_JSON environment variable');
-  }
-  try {
-    return JSON.parse(raw);
-  } catch (error) {
-    throw new Error('Invalid GOOGLE_SERVICE_ACCOUNT_JSON: must be valid JSON');
-  }
-};
-
-/**
- * Generate JWT for OAuth2 authentication (Vertex AI scope)
- */
-const generateJWT = (serviceAccount) => {
-  const nowInSeconds = Math.floor(Date.now() / 1000);
-  
-  const header = {
-    alg: 'RS256',
-    typ: 'JWT',
-  };
-
-  const payload = {
-    iss: serviceAccount.client_email,
-    sub: serviceAccount.client_email,
-    scope: 'https://www.googleapis.com/auth/cloud-platform',
-    aud: serviceAccount.token_uri,
-    exp: nowInSeconds + 3600,
-    iat: nowInSeconds,
-  };
-
-  const base64UrlEncode = (obj) => {
-    return Buffer.from(JSON.stringify(obj))
-      .toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '');
-  };
-
-  const unsignedToken = `${base64UrlEncode(header)}.${base64UrlEncode(payload)}`;
-
-  const privateKey = serviceAccount.private_key.replace(/\\n/g, '\n');
-  const sign = createSign('RSA-SHA256');
-  sign.update(unsignedToken);
-  const signature = sign.sign(privateKey, 'base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=/g, '');
-
-  return `${unsignedToken}.${signature}`;
-};
-
-/**
- * Get OAuth2 access token (cached for 1 hour)
- */
-const getAccessToken = async () => {
-  const now = Date.now();
-  
-  // Return cached token if still valid (refresh 60 seconds before expiry)
-  if (cachedAccessToken && now < cachedAccessTokenExpiry - 60000) {
-    return cachedAccessToken;
-  }
-
-  try {
-    const serviceAccount = loadServiceAccount();
-    const jwt = generateJWT(serviceAccount);
-
-    const tokenResponse = await fetch(serviceAccount.token_uri, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-        assertion: jwt,
-      }),
-    });
-
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      throw new Error(`Token request failed: ${tokenResponse.status} ${errorText}`);
-    }
-
-    const tokenData = await tokenResponse.json();
-    cachedAccessToken = tokenData.access_token;
-    cachedAccessTokenExpiry = now + (tokenData.expires_in * 1000);
-
-    return cachedAccessToken;
-  } catch (error) {
-    console.error('[API] Error getting access token:', error);
-    throw error;
-  }
-};
-
-/**
- * Call Vertex AI Imagen API
+ * Call Vertex AI Imagen generateImage
  * ONLY for imagen-4
  */
 const callImagenAPI = async (prompt) => {
-  const accessToken = await getAccessToken();
+  console.log("[API:IMAGEN] ========================================");
+  console.log("[API:IMAGEN] IMAGEN 4 IMAGE GENERATION REQUEST");
+  console.log("[API:IMAGEN] Prompt:", prompt);
+
+  // Generate access token using google-auth-library
+  console.log("[API:IMAGEN] Generating access token...");
+  const sa = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+  
+  const auth = new GoogleAuth({
+    credentials: sa,
+    scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+  });
+
+  const client = await auth.getClient();
+  const { token: accessToken } = await client.getAccessToken();
+  console.log("[API:IMAGEN] Access token obtained");
+
+  // Endpoint corretto: imagen-4:generateImage
   const projectId = 'eataly-creative-ai-suite';
   const location = 'us-central1';
-  const model = 'imagen-4.0-generate-001';
+  const model = 'imagen-4';
   
-  const endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:predict`;
+  const endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateImage`;
   
-  console.log("[API] ========================================");
-  console.log("[API] IMAGEN 4 IMAGE GENERATION REQUEST");
-  console.log("[API] Endpoint:", endpoint);
-  console.log("[API] Prompt:", prompt);
+  console.log("[API:IMAGEN] Endpoint:", endpoint);
 
+  // Body minimal: { prompt: { text }, imageGenerationConfig: { sampleCount: 1 } }
   const requestBody = {
-    instances: [
-      {
-        prompt: prompt
-      }
-    ],
-    parameters: {
+    prompt: { text: prompt },
+    imageGenerationConfig: {
       sampleCount: 1
     }
   };
 
-  console.log("[API] Request Body:", JSON.stringify(requestBody, null, 2));
+  console.log("[API:IMAGEN] Request Body:", JSON.stringify(requestBody, null, 2));
+  console.log("[API:IMAGEN] NOTE: NO aspect_ratio, person_generation, negative_prompt, ecc.");
 
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -150,24 +60,24 @@ const callImagenAPI = async (prompt) => {
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error("[API] ========================================");
-    console.error("[API] IMAGEN API ERROR");
-    console.error("[API] Status:", response.status);
-    console.error("[API] Status Text:", response.statusText);
-    console.error("[API] Raw Error Response:", errorText);
-    console.error("[API] ========================================");
+    console.error("[API:IMAGEN] ========================================");
+    console.error("[API:IMAGEN] IMAGEN API ERROR");
+    console.error("[API:IMAGEN] Status:", response.status);
+    console.error("[API:IMAGEN] Status Text:", response.statusText);
+    console.error("[API:IMAGEN] Raw Error Response:", errorText);
+    console.error("[API:IMAGEN] ========================================");
     throw new Error(`Imagen API error: ${response.status} ${errorText}`);
   }
 
   const data = await response.json();
-  console.log("[API] Imagen response received");
-  console.log("[API] Response keys:", Object.keys(data));
+  console.log("[API:IMAGEN] Imagen response received");
+  console.log("[API:IMAGEN] Response keys:", Object.keys(data));
   
   // Log raw response for debugging
-  console.log("[API] ========================================");
-  console.log("[API] RAW RESPONSE (full):");
+  console.log("[API:IMAGEN] ========================================");
+  console.log("[API:IMAGEN] RAW RESPONSE (full):");
   console.log(JSON.stringify(data, null, 2));
-  console.log("[API] ========================================");
+  console.log("[API:IMAGEN] ========================================");
   
   // Extract base64 image from response
   // Try multiple possible response formats
@@ -175,15 +85,18 @@ const callImagenAPI = async (prompt) => {
   
   if (data.predictions?.[0]?.bytesBase64Encoded) {
     imageBase64 = data.predictions[0].bytesBase64Encoded;
-    console.log("[API] Extracted image from predictions[0].bytesBase64Encoded");
+    console.log("[API:IMAGEN] Extracted image from predictions[0].bytesBase64Encoded");
   } else if (data.predictions?.[0]?.generatedImages?.[0]) {
     imageBase64 = data.predictions[0].generatedImages[0];
-    console.log("[API] Extracted image from predictions[0].generatedImages[0]");
+    console.log("[API:IMAGEN] Extracted image from predictions[0].generatedImages[0]");
   } else if (data.predictions?.[0]?.imageBytes) {
     imageBase64 = data.predictions[0].imageBytes;
-    console.log("[API] Extracted image from predictions[0].imageBytes");
+    console.log("[API:IMAGEN] Extracted image from predictions[0].imageBytes");
+  } else if (data.images?.[0]?.imageBytes) {
+    imageBase64 = data.images[0].imageBytes;
+    console.log("[API:IMAGEN] Extracted image from images[0].imageBytes");
   } else {
-    console.error("[API] Imagen response structure:", JSON.stringify(data, null, 2));
+    console.error("[API:IMAGEN] Imagen response structure:", JSON.stringify(data, null, 2));
     throw new Error('Imagen response missing image data');
   }
   
@@ -191,8 +104,8 @@ const callImagenAPI = async (prompt) => {
     throw new Error('No image data found in Imagen API response');
   }
   
-  console.log("[API] Image extracted successfully, length:", imageBase64.length);
-  console.log("[API] ========================================");
+  console.log("[API:IMAGEN] Image extracted successfully, length:", imageBase64.length);
+  console.log("[API:IMAGEN] ========================================");
   
   return imageBase64;
 };
@@ -225,7 +138,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    console.log('[API] Incoming image generation request', {
+    console.log('[API:IMAGEN] Incoming image generation request', {
       method: req.method,
       origin: req.headers.origin,
       url: req.url
@@ -243,12 +156,12 @@ export default async function handler(req, res) {
     
     if (modelToUse.toLowerCase() !== 'imagen-4') {
       return res.status(400).json({ 
-        error: `Wrong endpoint: model "${modelToUse}" is not supported. This endpoint only accepts "imagen-4". Use /api/chat for Gemini 2.5 Flash or /api/nanobananaImage for Nanobanana.` 
+        error: `Wrong endpoint: model "${modelToUse}" is not supported. This endpoint only accepts "imagen-4". Use /api/chat for Gemini 2.5 Flash or /api/generateNanobananaImage for Nanobanana.` 
       });
     }
 
     // Generate image via Vertex AI
-    console.log('[API] Calling Imagen API:', { prompt, model: modelToUse });
+    console.log('[API:IMAGEN] Calling Imagen API:', { prompt, model: modelToUse });
     const imageBase64 = await callImagenAPI(prompt);
 
     if (!imageBase64) {
@@ -260,7 +173,7 @@ export default async function handler(req, res) {
       imageBase64: imageBase64 // Backward compatibility
     });
   } catch (error) {
-    console.error('[API] ERROR:', error);
+    console.error('[API:IMAGEN] ERROR:', error);
     return res.status(500).json({
       error: 'Internal server error',
       message: error.message,

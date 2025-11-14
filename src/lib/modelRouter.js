@@ -19,8 +19,7 @@ export function resolveModelConfig(modelName) {
   const models = {
     // Text model - Google REST API
     'gemini-2.5-flash': {
-      id: 'gemini-2.5-flash',
-      name: 'Gemini 2.5 Flash',
+      name: 'gemini-2.5-flash',
       type: 'text',
       provider: 'google-text',
       endpoint: '/api/chat',
@@ -29,21 +28,19 @@ export function resolveModelConfig(modelName) {
     
     // Image model - Vertex AI Imagen
     'imagen-4': {
-      id: 'imagen-4',
-      name: 'Imagen 4',
+      name: 'imagen-4',
       type: 'image',
-      provider: 'vertex-imagen',
+      provider: 'imagen',
       endpoint: '/api/generateImage',
-      googleModel: 'imagen-4.0-generate-001'
+      googleModel: 'imagen-4'
     },
     
-    // Image model - Vertex AI Gemini streaming
+    // Image model - Vertex AI Gemini (Nanobanana)
     'gemini-2.5-flash-image': {
-      id: 'gemini-2.5-flash-image',
-      name: 'Nanobanana',
+      name: 'gemini-2.5-flash-image',
       type: 'image',
-      provider: 'vertex-gemini-image',
-      endpoint: '/api/nanobananaImage',
+      provider: 'nanobanana',
+      endpoint: '/api/generateNanobananaImage',
       googleModel: 'gemini-2.5-flash-image'
     }
   };
@@ -59,7 +56,7 @@ export function resolveModelConfig(modelName) {
     endpoint: config.endpoint,
     type: config.type,
     provider: config.provider,
-    modelId: config.id,
+    modelId: config.name,
     googleModel: config.googleModel
   };
 }

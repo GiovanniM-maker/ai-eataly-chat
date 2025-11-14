@@ -445,7 +445,7 @@ export const useChatStore = create((set, get) => ({
   /**
    * Generate image from prompt (Imagen 4 via Vertex AI)
    */
-  generateImage: async (prompt, model = null) => {
+  generateImagenImage: async (prompt, model = null) => {
     const { selectedModel } = get();
     const modelToUse = model || selectedModel;
     const config = resolveModelConfig(modelToUse);
@@ -729,15 +729,15 @@ export const useChatStore = create((set, get) => ({
       }
 
       // Route to appropriate handler based on model provider
-      if (config.provider === 'vertex-imagen') {
-        // Imagen 4 via Vertex AI
-        const prompt = message;
-        await get().generateImage(prompt, selectedModel);
-        return null;
-      } else if (config.provider === 'vertex-gemini-image') {
-        // Nanobanana via Vertex AI streaming
+      if (config.provider === 'nanobanana') {
+        // Nanobanana via Vertex AI generateContent
         const prompt = message;
         await get().generateNanobananaImage(prompt, selectedModel);
+        return null;
+      } else if (config.provider === 'imagen') {
+        // Imagen 4 via Vertex AI generateImage
+        const prompt = message;
+        await get().generateImagenImage(prompt, selectedModel);
         return null;
       } else if (config.provider === 'google-text') {
         // Text generation (default)

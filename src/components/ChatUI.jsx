@@ -7,7 +7,7 @@ import { getModelDisplayName } from '../constants/models';
  * Minimal Chat UI Component with Firestore persistence
  */
 const ChatUI = () => {
-  const { messages, sendMessage, sendImageMessage, generateImage, loadMessages, firestoreError, loading, selectedModel } = useChatStore();
+  const { messages, sendMessage, sendImageMessage, loadMessages, firestoreError, loading, selectedModel } = useChatStore();
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
