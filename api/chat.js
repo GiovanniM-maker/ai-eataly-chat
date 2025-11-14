@@ -141,16 +141,19 @@ const callModelAPI = async (model, message, modelConfig = null, modelSettings = 
   // Get system instruction (priority: modelSettings > Firestore config)
   const systemPrompt = system || modelConfig?.systemPrompt;
   
-  // Build system instruction tag (Gemini doesn't support "system" role)
-  const systemTag = systemPrompt && systemPrompt.trim() !== ""
-    ? `<system_instruction>${systemPrompt}</system_instruction>\n`
-    : "";
-
-  // Build contents array - system instructions are prepended to user message
+  // Build contents array - Gemini ONLY accepts "user" or "model" roles
+  // System instructions are embedded in the user message text (NO XML tags, NO system role)
+  let userMessageText = message;
+  
+  if (systemPrompt && systemPrompt.trim() !== "") {
+    // Prepend system instruction as plain text (NO XML tags)
+    userMessageText = `${systemPrompt}\n\n${message}`;
+  }
+  
   const contents = [
     {
-      role: 'user',
-      parts: [{ text: systemTag + message }]
+      role: 'user', // ONLY valid roles: "user" or "model"
+      parts: [{ text: userMessageText }]
     }
   ];
 

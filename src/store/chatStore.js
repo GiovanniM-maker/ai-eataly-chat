@@ -1050,18 +1050,26 @@ export const useChatStore = create((set, get) => ({
     
     try {
       // 1) Load pipeline config for this chat
-      let finalUserMessage = message;
+      const originalUserMessage = message; // Store original for UI display
+      let finalUserMessage = message; // Will be sent to main model
       let pipelineUsed = false;
       let pipelineModel = null; // Store pipeline model for badge
       
       try {
         const pipeline = await loadChatPipelineConfig(chatId);
         
-        if (pipeline.enabled && pipeline.model && pipeline.systemInstruction) {
-          console.log('[PIPELINE] Enabled: true');
-          console.log('[PIPELINE] Model used:', pipeline.model);
+        console.log('[PIPELINE] Enabled for chat ID:', chatId);
+        console.log('[PIPELINE] Config:', {
+          enabled: pipeline.enabled,
+          hasModel: !!pipeline.model,
+          hasSystemInstruction: !!pipeline.systemInstruction
+        });
+        
+        if (pipeline.enabled && pipeline.model && pipeline.systemInstruction && pipeline.systemInstruction.trim() !== '') {
+          console.log('[PIPELINE] ✅ Pipeline is ACTIVE');
+          console.log('[PIPELINE] Pre-model:', pipeline.model);
           console.log('[PIPELINE] System instruction length:', pipeline.systemInstruction.length);
-          console.log('[PIPELINE] Preprocessed user input:', message);
+          console.log('[PIPELINE] Original user input:', originalUserMessage);
           
           pipelineModel = pipeline.model; // Store for badge
           
@@ -1069,20 +1077,19 @@ export const useChatStore = create((set, get) => ({
           const apiUrl = import.meta.env.VITE_API_URL || '/api/chat';
           const preModelConfig = resolveModelConfig(pipeline.model);
           
-          // Build system instruction tag (Gemini format)
-          const systemTag = pipeline.systemInstruction && pipeline.systemInstruction.trim() !== ""
-            ? `<system_instruction>${pipeline.systemInstruction}</system_instruction>\n`
-            : "";
-          
-          const preMessageText = systemTag + message;
+          // Build message for pre-model: system instruction + user message (NO XML TAGS)
+          // The backend will handle system instructions correctly
+          const preModelMessage = `${pipeline.systemInstruction}\n\nUser message: ${originalUserMessage}`;
           
           const preModelSettings = {
+            system: pipeline.systemInstruction, // Pass system instruction via modelSettings
             temperature: pipeline.temperature,
             top_p: pipeline.topP,
             max_output_tokens: pipeline.maxTokens
           };
           
           console.log('[PIPELINE] Calling pre-model API:', pipeline.model);
+          console.log('[PIPELINE] Pre-model message (first 200 chars):', preModelMessage.substring(0, 200));
           
           const preResponse = await fetch(apiUrl, {
             method: 'POST',
@@ -1090,40 +1097,62 @@ export const useChatStore = create((set, get) => ({
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              message: preMessageText,
+              message: preModelMessage,
               model: preModelConfig.googleModel,
               modelSettings: preModelSettings
             }),
           });
           
           if (!preResponse.ok) {
-            throw new Error(`Pre-model API error: ${preResponse.status}`);
+            const errorText = await preResponse.text();
+            throw new Error(`Pre-model API error: ${preResponse.status} - ${errorText}`);
           }
           
           const preData = await preResponse.json();
-          finalUserMessage = preData.reply || message;
-          pipelineUsed = true;
           
-          console.log('[PIPELINE] Output from pre-model:', finalUserMessage);
-          console.log('[PIPELINE] Forwarding to main model');
+          // Extract preprocessed text (must be a clean string)
+          const preprocessedText = preData.reply || preData.text || originalUserMessage;
+          
+          // Ensure it's a string and clean it
+          if (typeof preprocessedText !== 'string') {
+            console.warn('[PIPELINE] Pre-model returned non-string, using original message');
+            finalUserMessage = originalUserMessage;
+          } else {
+            // Clean the preprocessed text (remove any XML tags or invalid characters)
+            const cleanedText = preprocessedText
+              .replace(/<system_instruction>.*?<\/system_instruction>/gi, '')
+              .replace(/<system>.*?<\/system>/gi, '')
+              .trim();
+            
+            finalUserMessage = cleanedText || originalUserMessage;
+            pipelineUsed = true;
+            
+            console.log('[PIPELINE] ✅ Pre-model output:');
+            console.log(finalUserMessage);
+            console.log('[PIPELINE] Final message sent to main model:');
+            console.log(JSON.stringify({ role: 'user', parts: [{ text: finalUserMessage }] }, null, 2));
+          }
         } else {
-          console.log('[PIPELINE] Disabled or incomplete config');
+          console.log('[PIPELINE] ⚠️ Disabled or incomplete config');
         }
       } catch (pipelineError) {
-        console.error('[PIPELINE] Error in pipeline pre-processing:', pipelineError);
-        console.warn('[PIPELINE] Continuing with original message');
+        console.error('[PIPELINE] ❌ Error in pipeline pre-processing:', pipelineError);
+        console.warn('[PIPELINE] ⚠️ Continuing with original message (fallback)');
         // Continue with original message if pipeline fails
+        finalUserMessage = originalUserMessage;
+        pipelineUsed = false;
       }
       
       // 2) Resolve model configuration (endpoint, type, googleModel)
       const config = resolveModelConfig(selectedModel);
       console.log('[Store] Model config resolved:', config);
 
-      // 3) Add user message immediately to UI (show original message, not preprocessed)
+      // 3) Add user message immediately to UI (show original message, NOT preprocessed)
+      // The preprocessed message is NEVER shown to the user
       const userMessage = {
         id: `temp-${Date.now()}`,
         role: 'user',
-        content: message, // Show original message to user
+        content: originalUserMessage, // Always show original message to user
         model: selectedModel,
         messageType: config.type,
         timestamp: Date.now()
@@ -1134,9 +1163,10 @@ export const useChatStore = create((set, get) => ({
       }));
 
       // 4) Save user message to Firestore (TEXT ONLY - images are not persisted)
+      // Save ORIGINAL message, NOT preprocessed
       if (config.type !== 'image') {
         try {
-          await get().saveMessageWithoutImageToFirestore('user', message, selectedModel);
+          await get().saveMessageWithoutImageToFirestore('user', originalUserMessage, selectedModel);
         } catch (firestoreError) {
           console.warn('[Store] Firestore save failed for user message, continuing with API call:', firestoreError);
         }
@@ -1158,7 +1188,11 @@ export const useChatStore = create((set, get) => ({
         const apiUrl = import.meta.env.VITE_API_URL || config.endpoint;
         
         console.log('[Store] Calling API:', apiUrl);
-        console.log('[Store] Request body:', { message, model: config.googleModel });
+        console.log('[Store] Request body:', { 
+          message: finalUserMessage, 
+          model: config.googleModel,
+          isPreprocessed: pipelineUsed 
+        });
 
         // Build modelSettings from current config
         const modelSettings = get().buildModelSettings(selectedModel);
