@@ -1203,7 +1203,7 @@ export const useChatStore = create((set, get) => ({
           model: selectedModel,
           messageType: 'text',
           timestamp: Date.now(),
-          preprocessedBy: data.preprocessedBy || null // Track if pre-processed
+          preprocessedBy: pipelineUsed ? pipeline.model : null // Track if pre-processed
         };
 
           set(state => ({
