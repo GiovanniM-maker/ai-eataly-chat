@@ -886,7 +886,7 @@ export const useChatStore = create((set, get) => ({
   /**
    * Generate image from prompt (Nanobanana via Vertex AI streaming)
    */
-  generateNanobananaImage: async (prompt, model = null) => {
+  generateNanobananaImage: async (prompt, model = null, attachments = []) => {
     const { selectedModel } = get();
     const modelToUse = model || selectedModel;
     const config = resolveModelConfig(modelToUse);
@@ -901,6 +901,7 @@ export const useChatStore = create((set, get) => ({
       console.log('[Store] Provider:', config.provider);
       console.log('[Store] Endpoint:', apiUrl);
       console.log('[Store] Prompt:', prompt);
+      console.log('[Store] Attachments:', attachments.length);
 
       // Build modelSettings from current config
       const modelSettings = get().buildModelSettings(modelToUse);
@@ -914,6 +915,7 @@ export const useChatStore = create((set, get) => ({
         body: JSON.stringify({
           model: config.googleModel,
           prompt: prompt,
+          ...(attachments.length > 0 && { attachments }),
           ...(modelSettings && { modelSettings }),
           debugMode: debugMode
         }),
@@ -1039,7 +1041,7 @@ export const useChatStore = create((set, get) => ({
    * Send a message using automatic model routing
    * Includes pipeline pre-processing if enabled
    */
-  sendMessage: async (message) => {
+  sendMessage: async (messageOrObject) => {
     const { activeChatId, sessionId, selectedModel } = get();
     const chatId = activeChatId || sessionId;
     
@@ -1050,10 +1052,28 @@ export const useChatStore = create((set, get) => ({
       set({ activeChatId: newChatId, sessionId: newChatId });
     }
     
+    // Handle both string (legacy) and object format
+    let messageText = '';
+    let attachments = [];
+    
+    if (typeof messageOrObject === 'string') {
+      // Legacy format: just text
+      messageText = messageOrObject;
+      attachments = [];
+    } else if (typeof messageOrObject === 'object' && messageOrObject !== null) {
+      // New format: { text, attachments }
+      messageText = messageOrObject.text || '';
+      attachments = messageOrObject.attachments || [];
+    } else {
+      throw new Error('Invalid message format');
+    }
+    
+    console.log("[DEBUG/STORE] Incoming attachments:", attachments);
+    
     try {
       // 1) Load pipeline config for this chat
-      const originalUserMessage = message; // Store original for UI display
-      let finalUserMessage = message; // Will be sent to main model
+      const originalUserMessage = messageText; // Store original for UI display
+      let finalUserMessage = messageText; // Will be sent to main model
       let pipelineUsed = false;
       let pipelineModel = null; // Store pipeline model for badge
       
@@ -1155,6 +1175,7 @@ export const useChatStore = create((set, get) => ({
         id: `temp-${Date.now()}`,
         role: 'user',
         content: originalUserMessage, // Always show original message to user
+        attachments: attachments.length > 0 ? attachments : undefined, // Store attachments for regeneration
         model: selectedModel,
         messageType: config.type,
         timestamp: Date.now()
@@ -1177,12 +1198,12 @@ export const useChatStore = create((set, get) => ({
       // Route to appropriate handler based on model provider
       if (config.provider === 'nanobanana') {
         // Nanobanana via Vertex AI generateContent
-        const prompt = message;
-        await get().generateNanobananaImage(prompt, selectedModel);
+        const prompt = finalUserMessage; // Use preprocessed message if pipeline was used
+        await get().generateNanobananaImage(prompt, selectedModel, attachments);
         return null;
       } else if (config.provider === 'imagen') {
         // Imagen 4 via Vertex AI generateImage
-        const prompt = message;
+        const prompt = finalUserMessage; // Use preprocessed message if pipeline was used
         await get().generateImagenImage(prompt, selectedModel);
         return null;
       } else if (config.provider === 'google-text') {
@@ -1216,6 +1237,7 @@ export const useChatStore = create((set, get) => ({
               message: finalUserMessage, // Use preprocessed message if pipeline was used
               model: config.googleModel,
               ...(modelSettings && { modelSettings }),
+              ...(attachments.length > 0 && { attachments }),
               debugMode: debugMode
             }),
           });
@@ -1368,7 +1390,11 @@ export const useChatStore = create((set, get) => ({
 
     // Resend the user message to get a new response
     try {
-      await get().sendMessage(userMessage.content);
+      // Check if user message has attachments
+      const messageToSend = userMessage.attachments 
+        ? { text: userMessage.content, attachments: userMessage.attachments }
+        : userMessage.content;
+      await get().sendMessage(messageToSend);
     } catch (error) {
       console.error('[Store] Error regenerating message:', error);
       throw error;
@@ -1408,8 +1434,12 @@ export const useChatStore = create((set, get) => ({
     }
 
     // Regenerate response with new text
+    // Preserve attachments if they exist
+    const messageToSend = message.attachments 
+      ? { text: newText, attachments: message.attachments }
+      : newText;
     try {
-      await get().sendMessage(newText);
+      await get().sendMessage(messageToSend);
     } catch (error) {
       console.error('[Store] Error regenerating after edit:', error);
       throw error;

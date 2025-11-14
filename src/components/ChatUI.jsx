@@ -90,17 +90,44 @@ const ChatUI = () => {
     setError(null);
 
     try {
-      // If there are images, send them first
-      if (images.length > 0) {
-        for (const img of images) {
-          await sendImageMessage(img.file);
-        }
+      // Convert images to attachments format
+      const attachments = [];
+      
+      for (const img of images) {
+        // Get image dimensions
+        const dimensions = await new Promise((resolve) => {
+          const imgEl = new Image();
+          imgEl.onload = () => {
+            resolve({ width: imgEl.width, height: imgEl.height });
+          };
+          imgEl.onerror = () => {
+            resolve({ width: 0, height: 0 });
+          };
+          imgEl.src = img.base64;
+        });
+        
+        // Extract base64 data (remove data:image/...;base64, prefix)
+        const base64Data = img.base64.includes(',') 
+          ? img.base64.split(',')[1] 
+          : img.base64;
+        
+        const attachment = {
+          type: "image",
+          mimeType: img.file.type || 'image/jpeg',
+          base64: base64Data,
+          width: dimensions.width,
+          height: dimensions.height
+        };
+        
+        console.log("[DEBUG/UI] Image attached:", attachment);
+        attachments.push(attachment);
       }
       
-      // If there's text, send it
-      if (text) {
-        await sendMessage(text);
-      }
+      // Send message with text and attachments together
+      await sendMessage({
+        text: text || '',
+        attachments: attachments
+      });
     } catch (error) {
       console.error('Error sending message:', error);
       setError(error.message || 'Failed to send message');

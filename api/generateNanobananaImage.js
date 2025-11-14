@@ -151,12 +151,13 @@ function extractText(obj) {
  * Call Vertex AI Gemini generateContent (NOT streaming)
  * Supports gemini-2.5-flash-image and gemini-2.5-nano-banana
  */
-const callNanobananaAPI = async (prompt, modelConfig = null, modelSettings = null, debugMode = false) => {
+const callNanobananaAPI = async (prompt, modelConfig = null, modelSettings = null, debugMode = false, attachments = []) => {
   const DEBUG_MODE = process.env.DEBUG_MODE === "true" || debugMode === true;
   
   if (DEBUG_MODE) {
     console.log("[DEBUG] ============ NANOBANANA API CALL =============");
     console.log("[DEBUG] Prompt:", prompt);
+    console.log("[API/NANOBANANA] Attachments received:", attachments);
   }
 
   // STEP 1: Generate access token using google-auth-library
@@ -189,16 +190,38 @@ const callNanobananaAPI = async (prompt, modelConfig = null, modelSettings = nul
   // Get system instruction (priority: modelSettings > Firestore config)
   const systemPrompt = system || modelConfig?.systemPrompt;
   
-  // Build system instruction tag (Gemini doesn't support "system" role)
-  const systemTag = systemPrompt && systemPrompt.trim() !== ""
-    ? `<system_instruction>${systemPrompt}</system_instruction>\n`
-    : "";
+  // Build parts array - start with text prompt
+  const parts = [];
+  
+  // Add text prompt (with system instruction prepended as plain text, NO XML)
+  let promptText = prompt;
+  if (systemPrompt && systemPrompt.trim() !== "") {
+    promptText = `${systemPrompt}\n\n${prompt}`;
+  }
+  
+  if (promptText.trim()) {
+    parts.push({ text: promptText });
+  }
+  
+  // Add image attachments as inline_data
+  if (attachments && attachments.length > 0) {
+    attachments.forEach(att => {
+      parts.push({
+        inline_data: {
+          mime_type: att.mimeType || 'image/jpeg',
+          data: att.base64
+        }
+      });
+    });
+  }
+  
+  console.log("[API/NANOBANANA] Parts built for model:", JSON.stringify(parts, null, 2));
 
-  // Build contents array - system instructions are prepended to user message
+  // Build contents array
   const contents = [
     {
       role: "user",
-      parts: [{ text: systemTag + prompt }]
+      parts: parts
     }
   ];
 
@@ -346,7 +369,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { prompt, model, modelSettings, debugMode: requestDebugMode } = req.body;
+    const { prompt, model, modelSettings, attachments, debugMode: requestDebugMode } = req.body;
     const DEBUG_MODE = process.env.DEBUG_MODE === "true" || requestDebugMode === true;
     
     if (DEBUG_MODE) {
@@ -367,6 +390,10 @@ export default async function handler(req, res) {
         error: `Wrong endpoint: model "${modelToUse}" is not supported. This endpoint only accepts "gemini-2.5-flash-image". Use /api/chat for gemini-2.5-flash-preview-09-2025.` 
       });
     }
+
+    // Extract attachments
+    const imageAttachments = attachments || [];
+    console.log("[API/NANOBANANA] Attachments received:", imageAttachments);
 
     // Load model configuration from Firestore
     console.log('[API:NANOBANANA] Loading model config from Firestore...');
@@ -391,8 +418,8 @@ export default async function handler(req, res) {
     }
 
     // Generate via Vertex AI generateContent (NOT streaming)
-    console.log('[API:NANOBANANA] Calling Nanobanana API:', { prompt, model: modelToUse, outputType: normalizedOutputType });
-    const result = await callNanobananaAPI(prompt, modelConfig, modelSettings, DEBUG_MODE);
+    console.log('[API:NANOBANANA] Calling Nanobanana API:', { prompt, model: modelToUse, outputType: normalizedOutputType, attachmentsCount: imageAttachments.length });
+    const result = await callNanobananaAPI(prompt, modelConfig, modelSettings, DEBUG_MODE, imageAttachments);
 
     // Build response
     const responseData = {};
