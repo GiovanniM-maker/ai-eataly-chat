@@ -8,7 +8,7 @@ const ALLOWED_ORIGINS = [
 ];
 
 /**
- * Call Vertex AI Imagen generateImage
+ * Call Vertex AI Imagen predict endpoint
  * ONLY for imagen-4
  */
 const callImagenAPI = async (prompt) => {
@@ -16,99 +16,102 @@ const callImagenAPI = async (prompt) => {
   console.log("[API:IMAGEN] IMAGEN 4 IMAGE GENERATION REQUEST");
   console.log("[API:IMAGEN] Prompt:", prompt);
 
-  // Generate access token using google-auth-library
-  console.log("[API:IMAGEN] Generating access token...");
-  const sa = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
-  
-  const auth = new GoogleAuth({
-    credentials: sa,
-    scopes: ["https://www.googleapis.com/auth/cloud-platform"],
-  });
+  try {
+    // Generate access token using google-auth-library
+    console.log("[API:IMAGEN] Generating access token...");
+    const sa = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    
+    const auth = new GoogleAuth({
+      credentials: sa,
+      scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+    });
 
-  const client = await auth.getClient();
-  const { token: accessToken } = await client.getAccessToken();
-  console.log("[API:IMAGEN] Access token obtained");
+    const client = await auth.getClient();
+    const { token: accessToken } = await client.getAccessToken();
+    console.log("[API:IMAGEN] Access token obtained");
 
-  // Endpoint corretto: imagen-4:generateImage
-  const projectId = 'eataly-creative-ai-suite';
-  const location = 'us-central1';
-  const model = 'imagen-4';
-  
-  const endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:generateImage`;
-  
-  console.log("[API:IMAGEN] Endpoint:", endpoint);
+    // Endpoint corretto: imagen-4:predict
+    const endpoint = "https://us-central1-aiplatform.googleapis.com/v1/projects/eataly-creative-ai-suite/locations/us-central1/publishers/google/models/imagen-4:predict";
+    
+    console.log("[API:IMAGEN] Endpoint:", endpoint);
 
-  // Body minimal: { prompt: { text }, imageGenerationConfig: { sampleCount: 1 } }
-  const requestBody = {
-    prompt: { text: prompt },
-    imageGenerationConfig: {
-      sampleCount: 1
+    // Request body: { instances: [{ prompt }], parameters: { sampleCount: 1 } }
+    const requestBody = {
+      instances: [
+        {
+          prompt: prompt
+        }
+      ],
+      parameters: {
+        sampleCount: 1
+      }
+    };
+
+    console.log("[API:IMAGEN] Request Body:", JSON.stringify(requestBody, null, 2));
+    console.log("[API:IMAGEN] NOTE: Using predict endpoint with instances/parameters format");
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("[API:IMAGEN] ========================================");
+      console.error("[API:IMAGEN] IMAGEN API ERROR");
+      console.error("[API:IMAGEN] Status:", response.status);
+      console.error("[API:IMAGEN] Status Text:", response.statusText);
+      console.error("[API:IMAGEN] Raw Error Response:", errorText);
+      console.error("[API:IMAGEN] ========================================");
+      throw new Error(`Imagen API error: ${response.status} ${errorText}`);
     }
-  };
 
-  console.log("[API:IMAGEN] Request Body:", JSON.stringify(requestBody, null, 2));
-  console.log("[API:IMAGEN] NOTE: NO aspect_ratio, person_generation, negative_prompt, ecc.");
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify(requestBody),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
+    const data = await response.json();
+    console.log("[API:IMAGEN] Imagen response received");
+    console.log("[API:IMAGEN] Response keys:", Object.keys(data));
+    
+    // Log raw response for debugging
+    console.log("[API:IMAGEN] ========================================");
+    console.log("[API:IMAGEN] RAW RESPONSE (full):");
+    console.log(JSON.stringify(data, null, 2));
+    console.log("[API:IMAGEN] ========================================");
+    
+    // Extract base64 image from response
+    // Try predictions[0].imageBase64 first, then bytesBase64Encoded
+    let imageBase64 = null;
+    
+    if (data.predictions?.[0]?.imageBase64) {
+      imageBase64 = data.predictions[0].imageBase64;
+      console.log("[API:IMAGEN] Extracted image from predictions[0].imageBase64");
+    } else if (data.predictions?.[0]?.bytesBase64Encoded) {
+      imageBase64 = data.predictions[0].bytesBase64Encoded;
+      console.log("[API:IMAGEN] Extracted image from predictions[0].bytesBase64Encoded");
+    } else {
+      console.error("[API:IMAGEN] Imagen response structure:", JSON.stringify(data, null, 2));
+      throw new Error('Imagen response missing image data in predictions[0].imageBase64 or predictions[0].bytesBase64Encoded');
+    }
+    
+    if (!imageBase64) {
+      throw new Error('No image data found in Imagen API response');
+    }
+    
+    console.log("[API:IMAGEN] Image extracted successfully");
+    console.log("[API:IMAGEN] Final base64 length:", imageBase64.length, "characters");
+    console.log("[API:IMAGEN] ========================================");
+    
+    return imageBase64;
+  } catch (error) {
     console.error("[API:IMAGEN] ========================================");
-    console.error("[API:IMAGEN] IMAGEN API ERROR");
-    console.error("[API:IMAGEN] Status:", response.status);
-    console.error("[API:IMAGEN] Status Text:", response.statusText);
-    console.error("[API:IMAGEN] Raw Error Response:", errorText);
+    console.error("[API:IMAGEN] ERROR in callImagenAPI:");
+    console.error("[API:IMAGEN] Error message:", error.message);
+    console.error("[API:IMAGEN] Error stack:", error.stack);
     console.error("[API:IMAGEN] ========================================");
-    throw new Error(`Imagen API error: ${response.status} ${errorText}`);
+    throw error;
   }
-
-  const data = await response.json();
-  console.log("[API:IMAGEN] Imagen response received");
-  console.log("[API:IMAGEN] Response keys:", Object.keys(data));
-  
-  // Log raw response for debugging
-  console.log("[API:IMAGEN] ========================================");
-  console.log("[API:IMAGEN] RAW RESPONSE (full):");
-  console.log(JSON.stringify(data, null, 2));
-  console.log("[API:IMAGEN] ========================================");
-  
-  // Extract base64 image from response
-  // Try multiple possible response formats
-  let imageBase64 = null;
-  
-  if (data.predictions?.[0]?.bytesBase64Encoded) {
-    imageBase64 = data.predictions[0].bytesBase64Encoded;
-    console.log("[API:IMAGEN] Extracted image from predictions[0].bytesBase64Encoded");
-  } else if (data.predictions?.[0]?.generatedImages?.[0]) {
-    imageBase64 = data.predictions[0].generatedImages[0];
-    console.log("[API:IMAGEN] Extracted image from predictions[0].generatedImages[0]");
-  } else if (data.predictions?.[0]?.imageBytes) {
-    imageBase64 = data.predictions[0].imageBytes;
-    console.log("[API:IMAGEN] Extracted image from predictions[0].imageBytes");
-  } else if (data.images?.[0]?.imageBytes) {
-    imageBase64 = data.images[0].imageBytes;
-    console.log("[API:IMAGEN] Extracted image from images[0].imageBytes");
-  } else {
-    console.error("[API:IMAGEN] Imagen response structure:", JSON.stringify(data, null, 2));
-    throw new Error('Imagen response missing image data');
-  }
-  
-  if (!imageBase64) {
-    throw new Error('No image data found in Imagen API response');
-  }
-  
-  console.log("[API:IMAGEN] Image extracted successfully");
-  console.log("[API:IMAGEN] Final base64 length:", imageBase64.length, "characters");
-  console.log("[API:IMAGEN] ========================================");
-  
-  return imageBase64;
 };
 
 /**
